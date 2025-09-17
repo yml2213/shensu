@@ -18,6 +18,11 @@ def ensure_directories() -> None:
     MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def save_app_config(data: Dict[str, Any]) -> None:
+    data = data or {}
+    CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def load_app_config() -> Dict[str, Any]:
     """加载可选的全局配置，文件不存在则返回空字典。"""
     if not CONFIG_FILE.exists():

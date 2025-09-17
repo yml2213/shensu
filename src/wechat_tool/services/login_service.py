@@ -6,7 +6,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from ..settings import DATA_DIR, ensure_directories, load_app_config
+from ..settings import (
+    DATA_DIR,
+    ensure_directories,
+    load_app_config,
+    save_app_config,
+)
 from ..storage.json_store import JSONStore
 from ..storage.models import Session
 from ..utils.crypto import encrypt_phone
@@ -41,37 +46,84 @@ class LoginService:
 
     def __init__(self, account_service: Optional[AccountService] = None) -> None:
         ensure_directories()
-        config = load_app_config().get("login", {})
-        auto_cfg = config.get("auto_sms")
-        self.cookie = config.get("cookie")
-        self.authorize_endpoint = config.get("authorize_endpoint")
-        self.auto_sms = None
+        self.config = load_app_config()
+        login_cfg = self.config.get("login", {})
+        auto_cfg = login_cfg.get("auto_sms")
+        self.cookie = login_cfg.get("cookie")
+        self.authorize_endpoint = login_cfg.get("authorize_endpoint")
+        self.auto_sms: Optional[AutoSmsManager] = None
+        self.auto_sms_enabled = False
         if auto_cfg and auto_cfg.get("enabled"):
-            try:
-                self.auto_sms = AutoSmsManager(auto_cfg)
-            except SmsProviderError as exc:
-                logger.error("初始化自动接码失败: %s", exc)
-                # 继续运行但提示自动接码不可用
-                self.auto_sms = None
+            self._reinitialize_auto(auto_cfg)
         self.account_service = account_service or AccountService()
         self.session_store = JSONStore(SESSIONS_FILE, default_factory=lambda: {"sessions": []})
 
+    # 自动接码配置 -----------------------------------------------------
+    def _reinitialize_auto(self, auto_cfg: Dict[str, Any]) -> None:
+        try:
+            self.auto_sms = AutoSmsManager(auto_cfg)
+            self.auto_sms_enabled = bool(self.auto_sms.is_enabled())
+        except SmsProviderError as exc:
+            logger.error("初始化接码失败: %s", exc)
+            self.auto_sms = None
+            self.auto_sms_enabled = False
 
     def auto_mode_enabled(self) -> bool:
-        return bool(self.auto_sms and self.auto_sms.is_enabled())
+        return bool(self.auto_sms_enabled and self.auto_sms and self.auto_sms.is_enabled())
 
+    def enable_auto_mode(self) -> bool:
+        auto_cfg = self.config.get("login", {}).get("auto_sms")
+        if auto_cfg and auto_cfg.get("enabled"):
+            self._reinitialize_auto(auto_cfg)
+        return self.auto_mode_enabled()
+
+    def disable_auto_mode(self) -> None:
+        self.auto_sms_enabled = False
+
+    def get_auto_config(self) -> Dict[str, Any]:
+        return self.config.get("login", {}).get("auto_sms", {}).copy()
+
+    def update_auto_config(self, *, token: str, username: str, password: str, project_id: str) -> None:
+        login_cfg = self.config.setdefault("login", {})
+        auto_cfg = login_cfg.setdefault("auto_sms", {})
+        auto_cfg.update(
+            {
+                "token": token.strip(),
+                "username": username.strip(),
+                "password": password.strip(),
+                "project_id": project_id.strip(),
+            }
+        )
+        auto_cfg["enabled"] = bool(
+            auto_cfg["project_id"]
+            and (auto_cfg["token"] or (auto_cfg["username"] and auto_cfg["password"]))
+        )
+        save_app_config(self.config)
+        if auto_cfg["enabled"]:
+            self._reinitialize_auto(auto_cfg)
+        else:
+            self.auto_sms = None
+            self.auto_sms_enabled = False
+
+    def get_project_id(self) -> str:
+        auto_cfg = self.config.get("login", {}).get("auto_sms", {})
+        return auto_cfg.get("project_id", "")
+
+    # 登录流程 ---------------------------------------------------------
     def start_login(self, *, wechat_id: str, wxid: str, phone: Optional[str], mode: str) -> LoginContext:
         if not wxid.strip():
             raise LoginError("Wxid 不能为空")
         auto_session: Optional[SmsSession] = None
         real_phone = (phone or "").strip()
         if mode == "auto":
-            if not self.auto_sms or not self.auto_sms.is_enabled():
+            if not self.auto_mode_enabled():
                 raise LoginError("当前未配置自动接码 API")
             try:
-                auto_session = self.auto_sms.acquire()
+                auto_session = self.auto_sms.acquire() if self.auto_sms else None
             except SmsProviderError as exc:
                 raise LoginError(f"自动获取手机号失败: {exc}") from exc
+            if not auto_session:
+                raise LoginError("未能获取手机号，请检查接码配置")
             real_phone = auto_session.phone
         if not real_phone:
             raise LoginError("手机号不能为空")
@@ -102,6 +154,7 @@ class LoginService:
             auto_session=auto_session,
         )
         self._save_session(context)
+        logger.info("已向 %s 发送验证码", real_phone)
         return context
 
     def obtain_auto_code(self, context: LoginContext) -> str:
@@ -109,6 +162,7 @@ class LoginService:
             raise LoginError("当前未启用自动接码")
         try:
             code = self.auto_sms.wait_for_code(context.auto_session)
+            logger.info("获取验证码成功: %s", code)
             return code
         except SmsProviderError as exc:
             self.auto_sms.release(context.auto_session, success=False)
@@ -139,6 +193,7 @@ class LoginService:
         if context.auto_session and self.auto_sms:
             self.auto_sms.release(context.auto_session, success=True)
             context.auto_session = None
+        logger.info("账号 %s 绑定成功", context.wechat_id)
         return bind_resp
 
     def abort_auto(self, context: LoginContext) -> None:
@@ -146,6 +201,7 @@ class LoginService:
             self.auto_sms.release(context.auto_session, success=False)
             context.auto_session = None
 
+    # session 记录 ----------------------------------------------------
     def _save_session(self, context: LoginContext) -> None:
         expires = (dt.datetime.now() + dt.timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%S")
         payload = {
@@ -158,13 +214,11 @@ class LoginService:
 
         def mutator(data: Dict[str, Any]) -> Dict[str, Any]:
             sessions = [Session.from_dict(item) for item in data.get("sessions", [])]
-            updated = False
             for idx, sess in enumerate(sessions):
                 if sess.wechat_id == context.wechat_id:
                     sessions[idx] = Session(**payload)
-                    updated = True
                     break
-            if not updated:
+            else:
                 sessions.append(Session(**payload))
             data["sessions"] = [sess.to_dict() for sess in sessions]
             return data

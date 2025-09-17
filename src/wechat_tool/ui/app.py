@@ -1,4 +1,4 @@
-"""Tkinter 应用骨架，实现账号管理与登录绑定流程。"""
+"""Tkinter 应用界面。"""
 from __future__ import annotations
 
 import logging
@@ -9,20 +9,17 @@ from typing import Optional
 import ttkbootstrap as tb
 
 from ..logging_config import configure_logging
-from ..services.account_service import (
-    AccountExistsError,
-    AccountNotFoundError,
-    AccountService,
-)
+from ..services.account_service import AccountExistsError, AccountNotFoundError, AccountService
 from ..services.login_service import LoginError, LoginService
 from ..settings import ensure_directories
+from .logger import attach_ui_logger
 from .tk_helpers import ensure_tk_env
 
 logger = logging.getLogger(__name__)
 
 
 class AccountDialog(tb.Toplevel):
-    """用于新增/编辑账号的简易表单对话框。"""
+    """用于新增/编辑账号的表单对话框。"""
 
     def __init__(
         self,
@@ -91,7 +88,7 @@ class AccountDialog(tb.Toplevel):
 
 
 class LoginDialog(tb.Toplevel):
-    """登录/绑定流程的参数采集。"""
+    """登录/绑定流程参数采集。"""
 
     def __init__(
         self,
@@ -126,7 +123,7 @@ class LoginDialog(tb.Toplevel):
         tb.Radiobutton(mode_frame, text="自动接码", variable=self._mode_var, value="auto", state=auto_state).grid(row=0, column=0, sticky="w")
         tb.Radiobutton(mode_frame, text="手动输入", variable=self._mode_var, value="manual").grid(row=0, column=1, sticky="w", padx=(10, 0))
         if not auto_enabled:
-            tb.Label(mode_frame, text="未配置接码 API", bootstyle="danger").grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+            tb.Label(mode_frame, text="未启用自动接码", bootstyle="danger").grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         btn_frame = tb.Frame(self)
         btn_frame.grid(row=1, column=0, pady=(0, 10))
@@ -146,15 +143,15 @@ class LoginDialog(tb.Toplevel):
     def _on_confirm(self) -> None:
         wxid = self._wxid_var.get().strip()
         phone = self._phone_var.get().strip()
+        mode = self._mode_var.get()
         if not wxid:
             messagebox.showwarning("提示", "Wxid 不能为空", parent=self)
             return
-        mode = self._mode_var.get()
         if mode != "auto" and not phone:
             messagebox.showwarning("提示", "手机号不能为空", parent=self)
             return
         if mode == "auto" and not self._auto_enabled:
-            messagebox.showwarning("提示", "当前未配置接码 API，无法自动获取验证码", parent=self)
+            messagebox.showwarning("提示", "当前未启用自动接码", parent=self)
             return
         self.result = {"wxid": wxid, "phone": phone, "mode": mode}
         self.destroy()
@@ -165,19 +162,28 @@ class LoginDialog(tb.Toplevel):
 
 
 class WechatToolApp(tb.Window):
-    """主应用窗口，负责搭建基础布局并联通账号与登录服务。"""
+    """主应用窗口。"""
 
     def __init__(self) -> None:
         super().__init__(title="微信申诉工具", themename="cosmo")
-        self.geometry("960x600")
+        self.geometry("1080x680")
         self.resizable(True, True)
 
         self.account_service = AccountService()
         self.login_service = LoginService(self.account_service)
         self.status_var = tk.StringVar(value="准备就绪")
         self.tree: ttk.Treeview | None = None
+        self.log_text: tk.Text | None = None
+
+        auto_cfg = self.login_service.get_auto_config()
+        self.use_auto_var = tk.BooleanVar(value=self.login_service.auto_mode_enabled())
+        self.yzy_token_var = tk.StringVar(value=auto_cfg.get("token", ""))
+        self.yzy_user_var = tk.StringVar(value=auto_cfg.get("username", ""))
+        self.yzy_pass_var = tk.StringVar(value=auto_cfg.get("password", ""))
+        self.yzy_project_var = tk.StringVar(value=auto_cfg.get("project_id", ""))
 
         self._build_widgets()
+        attach_ui_logger(self._append_log)
         self.refresh_accounts()
 
     def _build_widgets(self) -> None:
@@ -190,47 +196,81 @@ class WechatToolApp(tb.Window):
         main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(0, weight=1)
 
-        sidebar = tb.Frame(main_frame, padding=12)
-        sidebar.grid(row=0, column=0, sticky="ns")
+        sidebar = tb.Frame(main_frame, padding=14)
+        sidebar.grid(row=0, column=0, sticky="nsw")
         sidebar.columnconfigure(0, weight=1)
 
-        tb.Label(sidebar, text="账号管理", font=("Helvetica", 14, "bold")).grid(row=0, column=0, pady=(0, 12))
-        tb.Button(sidebar, text="添加账号", bootstyle="primary", command=self._on_add_account).grid(row=1, column=0, sticky="ew", pady=4)
-        tb.Button(sidebar, text="编辑账号", bootstyle="info", command=self._on_edit_account).grid(row=2, column=0, sticky="ew", pady=4)
-        tb.Button(sidebar, text="删除账号", bootstyle="danger", command=self._on_delete_account).grid(row=3, column=0, sticky="ew", pady=4)
-        tb.Button(sidebar, text="微信登录/绑定", bootstyle="success", command=self._on_login_account).grid(row=4, column=0, sticky="ew", pady=10)
-        tb.Separator(sidebar, orient="horizontal").grid(row=5, column=0, sticky="ew", pady=8)
-        tb.Button(sidebar, text="刷新列表", bootstyle="secondary", command=self.refresh_accounts).grid(row=6, column=0, sticky="ew", pady=4)
+        tb.Label(sidebar, text="账号管理", font=("Helvetica", 14, "bold"), anchor="center").grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        button_opts = {"sticky": "ew", "pady": 6}
+        tb.Button(sidebar, text="添加账号", bootstyle="primary", command=self._on_add_account).grid(row=1, column=0, **button_opts)
+        tb.Button(sidebar, text="编辑账号", bootstyle="info", command=self._on_edit_account).grid(row=2, column=0, **button_opts)
+        tb.Button(sidebar, text="删除账号", bootstyle="danger", command=self._on_delete_account).grid(row=3, column=0, **button_opts)
+        tb.Button(sidebar, text="微信登录/绑定", bootstyle="success", command=self._on_login_account).grid(row=4, column=0, **button_opts)
+        tb.Button(sidebar, text="刷新列表", bootstyle="secondary", command=self.refresh_accounts).grid(row=5, column=0, **button_opts)
 
-        content = tb.Frame(main_frame, padding=12)
+        tb.Separator(sidebar, orient="horizontal").grid(row=6, column=0, sticky="ew", pady=(12, 6))
+        tb.Label(sidebar, text="椰子云配置", font=("Helvetica", 12, "bold"), anchor="w").grid(row=7, column=0, sticky="w")
+        tb.Checkbutton(sidebar, text="启用自动取卡", variable=self.use_auto_var, bootstyle="round-toggle", command=self._on_toggle_auto).grid(row=8, column=0, sticky="w", pady=(4, 8))
+
+        config_frame = tb.Frame(sidebar)
+        config_frame.grid(row=9, column=0, sticky="ew")
+        config_frame.columnconfigure(0, weight=1)
+        fields = [
+            ("Token", self.yzy_token_var),
+            ("用户名", self.yzy_user_var),
+            ("密码", self.yzy_pass_var),
+            ("项目对接码", self.yzy_project_var),
+        ]
+        for idx, (label_text, var) in enumerate(fields):
+            tb.Label(config_frame, text=label_text).grid(row=idx * 2, column=0, sticky="w", pady=(0, 2))
+            tb.Entry(config_frame, textvariable=var, width=22).grid(row=idx * 2 + 1, column=0, sticky="ew", pady=(0, 6))
+
+        tb.Button(sidebar, text="保存配置", bootstyle="secondary", command=self._on_save_yzy_config).grid(row=10, column=0, **button_opts)
+        sidebar.rowconfigure(11, weight=1)
+
+        # 主内容区域
+        content = tb.Frame(main_frame, padding=14)
         content.grid(row=0, column=1, sticky="nsew")
         content.columnconfigure(0, weight=1)
-        content.rowconfigure(1, weight=1)
+        content.rowconfigure(1, weight=3)
+        content.rowconfigure(2, weight=2)
 
-        tb.Label(content, text="账号列表", font=("Helvetica", 14, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 10))
+        tb.Label(content, text="账号列表", font=("Helvetica", 14, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 8))
 
-        tree = ttk.Treeview(content, columns=("wechat", "display_name", "phone", "quota", "status"), show="headings", height=16)
-        tree.heading("wechat", text="微信号")
-        tree.heading("display_name", text="备注")
-        tree.heading("phone", text="手机号")
-        tree.heading("quota", text="今日提交/上限")
-        tree.heading("status", text="状态")
-        tree.column("wechat", width=180)
-        tree.column("display_name", width=160)
-        tree.column("phone", width=140)
-        tree.column("quota", width=160)
-        tree.column("status", width=200)
+        columns = ("wechat", "display_name", "phone", "quota", "status")
+        tree = ttk.Treeview(content, columns=columns, show="headings", height=18)
+        headings = {
+            "wechat": ("微信号", 180, "w"),
+            "display_name": ("备注", 160, "w"),
+            "phone": ("手机号", 150, "center"),
+            "quota": ("今日提交/上限", 170, "center"),
+            "status": ("状态", 160, "center"),
+        }
+        for cid, (text, width, anchor) in headings.items():
+            tree.heading(cid, text=text, anchor="center")
+            tree.column(cid, width=width, anchor=anchor)
         tree.grid(row=1, column=0, sticky="nsew")
-        self.tree = tree
         tree.bind("<Double-1>", lambda _e: self._on_edit_account())
+        self.tree = tree
 
         scrollbar = ttk.Scrollbar(content, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.grid(row=1, column=1, sticky="ns")
 
+        log_frame = tb.LabelFrame(content, text="运行日志", padding=8)
+        log_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(12, 0))
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
+        self.log_text = tk.Text(log_frame, height=8, wrap="word", state="disabled")
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=log_scroll.set)
+        log_scroll.grid(row=0, column=1, sticky="ns")
+
         status_bar = tb.Label(self, textvariable=self.status_var, anchor="w", bootstyle="secondary")
         status_bar.grid(row=1, column=0, sticky="ew")
 
+    # 账号操作 ---------------------------------------------------------
     def refresh_accounts(self) -> None:
         if self.tree is None:
             return
@@ -241,9 +281,7 @@ class WechatToolApp(tb.Window):
             messagebox.showerror("错误", f"加载账号失败: {exc}")
             return
 
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
+        self.tree.delete(*self.tree.get_children())
         today = dt_today_string()
         for acc in accounts:
             quota = acc.quota_count if acc.quota_date == today else 0
@@ -260,7 +298,6 @@ class WechatToolApp(tb.Window):
                     status,
                 ),
             )
-
         self._set_status(f"当前共 {len(accounts)} 个账号")
 
     def _on_add_account(self) -> None:
@@ -338,6 +375,7 @@ class WechatToolApp(tb.Window):
         self.refresh_accounts()
         messagebox.showinfo("成功", f"账号 {wechat_id} 已删除")
 
+    # 登录流程 ---------------------------------------------------------
     def _on_login_account(self) -> None:
         wechat_id = self._get_selected_wechat()
         if not wechat_id:
@@ -395,6 +433,27 @@ class WechatToolApp(tb.Window):
         self.refresh_accounts()
         messagebox.showinfo("成功", f"账号 {wechat_id} 已完成绑定并重置额度")
 
+    # 自动接码配置 -----------------------------------------------------
+    def _on_toggle_auto(self) -> None:
+        enabled = self.use_auto_var.get()
+        if enabled:
+            if not self.login_service.enable_auto_mode():
+                messagebox.showinfo("提示", "请先填写椰子云配置并保存")
+                self.use_auto_var.set(False)
+        else:
+            self.login_service.disable_auto_mode()
+
+    def _on_save_yzy_config(self) -> None:
+        self.login_service.update_auto_config(
+            token=self.yzy_token_var.get(),
+            username=self.yzy_user_var.get(),
+            password=self.yzy_pass_var.get(),
+            project_id=self.yzy_project_var.get(),
+        )
+        self.use_auto_var.set(self.login_service.auto_mode_enabled())
+        messagebox.showinfo("提示", "椰子云配置已保存")
+
+    # 工具方法 ---------------------------------------------------------
     def _get_selected_wechat(self) -> Optional[str]:
         if self.tree is None:
             return None
@@ -408,6 +467,14 @@ class WechatToolApp(tb.Window):
 
     def _set_status(self, text: str) -> None:
         self.status_var.set(text)
+
+    def _append_log(self, message: str) -> None:
+        if self.log_text is None:
+            return
+        self.log_text.configure(state="normal")
+        self.log_text.insert("end", message + "\n")
+        self.log_text.configure(state="disabled")
+        self.log_text.see("end")
 
 
 def dt_today_string() -> str:
