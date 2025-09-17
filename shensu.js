@@ -38,4 +38,32 @@ var e = {
 }
 e.sign = encrypt_sign(e.openid + e.plea_type + e.plea_phone + e.company_id + e.company_name + e.plea_reason + e.filename)
 
-console.log(e)
+// console.log(e)
+
+
+// AES key/iv 与前端保持一致
+const KEY = CryptoJS.enc.Utf8.parse('ebupt_1234567890')
+const IV = CryptoJS.enc.Utf8.parse('1234567890123456')
+// 解密由 encryptPhone 生成的密文，返回明文手机号
+function decryptPhone(enc) {
+    if (!enc) return ''
+    // 还原 Base64 字符
+    let b64 = enc.replace(/_/g, '/').replace(/-/g, '+')
+    // 若外部去掉了填充，这里尝试补齐（encryptPhone 默认保留 '=')
+    const pad = b64.length % 4
+    if (pad === 2) b64 += '=='
+    else if (pad === 3) b64 += '='
+    else if (pad === 1) b64 += '==='
+
+    const ciphertext = CryptoJS.enc.Base64.parse(b64)
+    const cipherParams = CryptoJS.lib.CipherParams.create({ ciphertext })
+    const decrypted = CryptoJS.AES.decrypt(cipherParams, KEY, { iv: IV, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 })
+    const plaintext = CryptoJS.enc.Utf8.stringify(decrypted)
+    // 明文格式：phone$timestamp
+    console.log(plaintext)
+
+    const idx = plaintext.lastIndexOf('$')
+    return idx === -1 ? plaintext : plaintext.slice(0, idx)
+}
+
+console.log(decryptPhone("VjGm2Ag9MNEW21P_1Kpt3fOnukICKOIlIFJZ4UIN6no="))
