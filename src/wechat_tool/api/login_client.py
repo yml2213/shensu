@@ -27,9 +27,15 @@ class LoginApiError(RuntimeError):
 class LoginApiClient:
     """对接授权、获取 openid、短信发送与绑定接口。"""
 
-    def __init__(self, cookie: Optional[str] = None, timeout: float = 20.0) -> None:
+    def __init__(
+        self,
+        cookie: Optional[str] = None,
+        timeout: float = 20.0,
+        authorize_endpoint: Optional[str] = None,
+    ) -> None:
         self.cookie = cookie
         self.timeout = timeout
+        self.authorize_endpoint = authorize_endpoint or AUTHORIZE_ENDPOINT
         self._client = httpx.Client(timeout=timeout)
 
     def close(self) -> None:
@@ -43,7 +49,7 @@ class LoginApiClient:
         if self.cookie:
             headers["Cookie"] = self.cookie
         payload = {"Appid": APP_ID, "Url": AUTH_URL, "Wxid": wxid}
-        resp = self._client.post(AUTHORIZE_ENDPOINT, json=payload, headers=headers)
+        resp = self._client.post(self.authorize_endpoint, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
         if not data.get("Success"):

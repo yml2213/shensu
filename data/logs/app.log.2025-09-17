@@ -1,0 +1,16 @@
+2025-09-17 22:04:37 | INFO | __main__ | 开始提交申诉
+2025-09-17 22:04:37 | INFO | httpx | HTTP Request: POST https://www.securityeb.com/ktfsr/pleaphone/addPlea "HTTP/1.1 200 OK"
+2025-09-17 22:04:37 | ERROR | __main__ | 业务异常: addPlea 返回异常: code=400, msg=您的申诉次数已经达到上限
+2025-09-17 22:10:30 | INFO | wechat_tool.ui.app | 启动 Tkinter 应用
+2025-09-17 22:12:04 | INFO | wechat_tool.ui.app | 启动 Tkinter 应用
+2025-09-17 22:17:41 | INFO | wechat_tool.ui.app | 启动 Tkinter 应用
+2025-09-17 22:23:31 | INFO | __main__ | 开始提交申诉
+2025-09-17 22:23:31 | INFO | httpx | HTTP Request: POST https://www.securityeb.com/ktfsr/pleaphone/addPlea "HTTP/1.1 200 OK"
+2025-09-17 22:23:31 | ERROR | __main__ | 业务异常: addPlea 返回异常: code=400, msg=您的申诉次数已经达到上限
+2025-09-17 23:21:12 | INFO | wechat_tool.ui.app | 启动 Tkinter 应用
+2025-09-17 23:22:21 | INFO | httpx | HTTP Request: POST http://gee.myds.me:8055/api/OfficialAccounts/OauthAuthorize "HTTP/1.1 502 Bad Gateway"
+2025-09-17 23:42:29 | INFO | wechat_tool.ui.app | 启动 Tkinter 应用
+2025-09-17 23:42:59 | INFO | httpx | HTTP Request: POST http://gee.myds.me:8005/api/OfficialAccounts/OauthAuthorize "HTTP/1.1 200 OK"
+2025-09-17 23:43:00 | INFO | httpx | HTTP Request: GET https://www.securityeb.com/wechatService/wechatServ/getUserInfo?code=041FFxFa1jKmjK0JJMFa1d72rI0FFxFG "HTTP/1.1 200 OK"
+2025-09-17 23:43:00 | INFO | httpx | HTTP Request: POST https://www.securityeb.com/ktfsr/sms/send/sendCode "HTTP/1.1 200 OK"
+2025-09-17 23:43:14 | INFO | httpx | HTTP Request: POST https://www.securityeb.com/ktfsr/user/bind/ByQ-9a5JC0NRsgzjwsZ1zdYkHWPkiceHUXsGPmF_v5U= "HTTP/1.1 200 OK"

@@ -48,3 +48,8 @@
    code 就是验证码 使用 encrypt_phone 函数加密
 
 返回 返回 {"code":200,"msg":"请求成功"} 就是登陆成功 就算绑定成功
+
+
+配置说明:
+- `config.json` 中的 `login.authorize_endpoint` 可修改为正确端口 (例如 8005)。
+- `login.auto_sms` 支持椰子云自动取号/拉取验证码，需要填写 token 或用户名/密码以及项目 ID。

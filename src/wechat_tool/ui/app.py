@@ -117,7 +117,7 @@ class LoginDialog(tb.Toplevel):
         tb.Label(body, text="Wxid").grid(row=0, column=0, sticky="w")
         tb.Entry(body, textvariable=self._wxid_var, width=28).grid(row=0, column=1, padx=(10, 0), pady=5)
 
-        tb.Label(body, text="手机号").grid(row=1, column=0, sticky="w")
+        tb.Label(body, text="手机号（自动模式可留空）").grid(row=1, column=0, sticky="w")
         tb.Entry(body, textvariable=self._phone_var, width=28).grid(row=1, column=1, padx=(10, 0), pady=5)
 
         mode_frame = tb.LabelFrame(body, text="验证码获取方式", padding=10)
@@ -149,10 +149,10 @@ class LoginDialog(tb.Toplevel):
         if not wxid:
             messagebox.showwarning("提示", "Wxid 不能为空", parent=self)
             return
-        if not phone:
+        mode = self._mode_var.get()
+        if mode != "auto" and not phone:
             messagebox.showwarning("提示", "手机号不能为空", parent=self)
             return
-        mode = self._mode_var.get()
         if mode == "auto" and not self._auto_enabled:
             messagebox.showwarning("提示", "当前未配置接码 API，无法自动获取验证码", parent=self)
             return
@@ -352,29 +352,37 @@ class WechatToolApp(tb.Window):
             title="微信登录/绑定",
             default_wxid=account.wechat_id,
             default_phone=account.phone,
-            auto_enabled=self.login_service.auto_fetcher.is_enabled(),
+            auto_enabled=self.login_service.auto_mode_enabled(),
         )
         if not dialog.result:
             return
         wxid = dialog.result["wxid"]
         phone = dialog.result["phone"]
         mode = dialog.result["mode"]
+
         try:
-            context = self.login_service.start_login(wechat_id=wechat_id, wxid=wxid, phone=phone)
-            messagebox.showinfo("提示", "验证码已发送，请注意查收", parent=self)
+            context = self.login_service.start_login(
+                wechat_id=wechat_id,
+                wxid=wxid,
+                phone=phone,
+                mode=mode,
+            )
+            messagebox.showinfo("提示", f"验证码已发送至 {context.phone}", parent=self)
         except LoginError as exc:
             messagebox.showerror("错误", str(exc))
             return
 
         if mode == "auto":
             try:
-                sms_code = self.login_service.fetch_auto_code(phone)
+                sms_code = self.login_service.obtain_auto_code(context)
             except LoginError as exc:
-                messagebox.showerror("错误", f"自动获取验证码失败: {exc}")
+                self.login_service.abort_auto(context)
+                messagebox.showerror("错误", str(exc))
                 return
         else:
             sms_code = simpledialog.askstring("验证码", "请输入短信验证码", parent=self)
             if not sms_code:
+                self.login_service.abort_auto(context)
                 messagebox.showinfo("提示", "已取消绑定流程")
                 return
 

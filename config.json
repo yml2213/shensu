@@ -1,12 +1,22 @@
 {
   "login": {
+    "authorize_endpoint": "http://gee.myds.me:8005/api/OfficialAccounts/OauthAuthorize",
     "cookie": "",
     "auto_sms": {
-      "enabled": false,
-      "url": "",
-      "method": "GET",
-      "headers": {},
-      "response_key": "code"
+      "enabled": true,
+      "provider": "yzy",
+      "base_url": "http://api.sqhyw.net:90",
+      "backup_base_url": "http://api.nnanx.com:90",
+      "token": "",
+      "username": "GeeMaker",
+      "password": "mars6277",
+      "project_id": "891372",
+      "poll_interval": 5,
+      "max_wait_seconds": 120,
+      "min_remaining": 10,
+      "release_on_success": true,
+      "release_on_failure": true,
+      "blacklist_on_failure": false
     }
   }
 }
