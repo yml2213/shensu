@@ -17,6 +17,7 @@ from typing import Any, Dict
 from wechat_tool.config import read_submission_config
 from wechat_tool.logging_config import configure_logging
 from wechat_tool.services.submission_service import SubmissionError, SubmissionService
+from wechat_tool.ui.app import run_app
 
 
 logger = logging.getLogger(__name__)
@@ -52,3 +53,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+def main_gui() -> None:
+    """图形界面入口。"""
+    run_app()
+
