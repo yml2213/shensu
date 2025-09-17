@@ -11,7 +11,10 @@ dependencies = [
 ]
 
 [project.scripts]
-submit-plea = "submit_plea:main"
+submit-plea = "main:main"
 
 [tool.uv]
 index-url = "https://pypi.org/simple"
+
+[tool.uv.sources]
+wechat_tool = { path = "src/wechat_tool" }
