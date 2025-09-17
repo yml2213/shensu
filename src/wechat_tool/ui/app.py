@@ -1,27 +1,184 @@
-"""Tkinter 应用骨架。"""
+"""Tkinter 应用骨架，实现账号管理与登录绑定流程。"""
 from __future__ import annotations
 
 import logging
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, simpledialog, ttk
+from typing import Optional
 
 import ttkbootstrap as tb
 
 from ..logging_config import configure_logging
+from ..services.account_service import (
+    AccountExistsError,
+    AccountNotFoundError,
+    AccountService,
+)
+from ..services.login_service import LoginError, LoginService
 from ..settings import ensure_directories
 from .tk_helpers import ensure_tk_env
 
 logger = logging.getLogger(__name__)
 
 
+class AccountDialog(tb.Toplevel):
+    """用于新增/编辑账号的简易表单对话框。"""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        title: str,
+        initial: Optional[dict[str, str]] = None,
+        disable_wechat: bool = False,
+    ) -> None:
+        super().__init__(master)
+        self.title(title)
+        self.resizable(False, False)
+        self.result: Optional[dict[str, str]] = None
+
+        self._wechat_var = tk.StringVar(value=(initial or {}).get("wechat_id", ""))
+        self._name_var = tk.StringVar(value=(initial or {}).get("display_name", ""))
+        self._phone_var = tk.StringVar(value=(initial or {}).get("phone", ""))
+
+        body = tb.Frame(self, padding=15)
+        body.grid(row=0, column=0, sticky="nsew")
+
+        tb.Label(body, text="微信号").grid(row=0, column=0, sticky="w")
+        wechat_entry = tb.Entry(body, textvariable=self._wechat_var, width=28)
+        wechat_entry.grid(row=0, column=1, padx=(10, 0), pady=5)
+        if disable_wechat:
+            wechat_entry.configure(state="disabled")
+
+        tb.Label(body, text="备注 / 昵称").grid(row=1, column=0, sticky="w")
+        tb.Entry(body, textvariable=self._name_var, width=28).grid(row=1, column=1, padx=(10, 0), pady=5)
+
+        tb.Label(body, text="手机号").grid(row=2, column=0, sticky="w")
+        tb.Entry(body, textvariable=self._phone_var, width=28).grid(row=2, column=1, padx=(10, 0), pady=5)
+
+        btn_frame = tb.Frame(self)
+        btn_frame.grid(row=1, column=0, pady=(0, 10))
+        tb.Button(btn_frame, text="取消", command=self._on_cancel).grid(row=0, column=0, padx=5)
+        tb.Button(btn_frame, text="保存", bootstyle="primary", command=self._on_save).grid(row=0, column=1, padx=5)
+
+        self.bind("<Return>", lambda _e: self._on_save())
+        self.bind("<Escape>", lambda _e: self._on_cancel())
+
+        self.transient(master)
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        self.wait_visibility()
+        if not disable_wechat:
+            wechat_entry.focus_set()
+        else:
+            body.focus_set()
+        self.wait_window(self)
+
+    def _on_save(self) -> None:
+        wechat_id = self._wechat_var.get().strip()
+        if not wechat_id:
+            messagebox.showwarning("提示", "微信号不能为空", parent=self)
+            return
+        self.result = {
+            "wechat_id": wechat_id,
+            "display_name": self._name_var.get().strip(),
+            "phone": self._phone_var.get().strip(),
+        }
+        self.destroy()
+
+    def _on_cancel(self) -> None:
+        self.result = None
+        self.destroy()
+
+
+class LoginDialog(tb.Toplevel):
+    """登录/绑定流程的参数采集。"""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        title: str,
+        default_wxid: str,
+        default_phone: str,
+        auto_enabled: bool,
+    ) -> None:
+        super().__init__(master)
+        self.title(title)
+        self.resizable(False, False)
+        self.result: Optional[dict[str, str]] = None
+        self._auto_enabled = auto_enabled
+
+        self._wxid_var = tk.StringVar(value=default_wxid)
+        self._phone_var = tk.StringVar(value=default_phone)
+        self._mode_var = tk.StringVar(value="auto" if auto_enabled else "manual")
+
+        body = tb.Frame(self, padding=15)
+        body.grid(row=0, column=0, sticky="nsew")
+
+        tb.Label(body, text="Wxid").grid(row=0, column=0, sticky="w")
+        tb.Entry(body, textvariable=self._wxid_var, width=28).grid(row=0, column=1, padx=(10, 0), pady=5)
+
+        tb.Label(body, text="手机号").grid(row=1, column=0, sticky="w")
+        tb.Entry(body, textvariable=self._phone_var, width=28).grid(row=1, column=1, padx=(10, 0), pady=5)
+
+        mode_frame = tb.LabelFrame(body, text="验证码获取方式", padding=10)
+        mode_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        auto_state = tk.NORMAL if auto_enabled else tk.DISABLED
+        tb.Radiobutton(mode_frame, text="自动接码", variable=self._mode_var, value="auto", state=auto_state).grid(row=0, column=0, sticky="w")
+        tb.Radiobutton(mode_frame, text="手动输入", variable=self._mode_var, value="manual").grid(row=0, column=1, sticky="w", padx=(10, 0))
+        if not auto_enabled:
+            tb.Label(mode_frame, text="未配置接码 API", bootstyle="danger").grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        btn_frame = tb.Frame(self)
+        btn_frame.grid(row=1, column=0, pady=(0, 10))
+        tb.Button(btn_frame, text="取消", command=self._on_cancel).grid(row=0, column=0, padx=5)
+        tb.Button(btn_frame, text="继续", bootstyle="primary", command=self._on_confirm).grid(row=0, column=1, padx=5)
+
+        self.bind("<Return>", lambda _e: self._on_confirm())
+        self.bind("<Escape>", lambda _e: self._on_cancel())
+
+        self.transient(master)
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        self.wait_visibility()
+        body.focus_set()
+        self.wait_window(self)
+
+    def _on_confirm(self) -> None:
+        wxid = self._wxid_var.get().strip()
+        phone = self._phone_var.get().strip()
+        if not wxid:
+            messagebox.showwarning("提示", "Wxid 不能为空", parent=self)
+            return
+        if not phone:
+            messagebox.showwarning("提示", "手机号不能为空", parent=self)
+            return
+        mode = self._mode_var.get()
+        if mode == "auto" and not self._auto_enabled:
+            messagebox.showwarning("提示", "当前未配置接码 API，无法自动获取验证码", parent=self)
+            return
+        self.result = {"wxid": wxid, "phone": phone, "mode": mode}
+        self.destroy()
+
+    def _on_cancel(self) -> None:
+        self.result = None
+        self.destroy()
+
+
 class WechatToolApp(tb.Window):
-    """主应用窗口，负责搭建基础布局。"""
+    """主应用窗口，负责搭建基础布局并联通账号与登录服务。"""
 
     def __init__(self) -> None:
         super().__init__(title="微信申诉工具", themename="cosmo")
         self.geometry("960x600")
         self.resizable(True, True)
+
+        self.account_service = AccountService()
+        self.login_service = LoginService(self.account_service)
+        self.status_var = tk.StringVar(value="准备就绪")
+        self.tree: ttk.Treeview | None = None
+
         self._build_widgets()
+        self.refresh_accounts()
 
     def _build_widgets(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -33,46 +190,222 @@ class WechatToolApp(tb.Window):
         main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(0, weight=1)
 
-        sidebar = tb.Frame(main_frame, padding=10)
+        sidebar = tb.Frame(main_frame, padding=12)
         sidebar.grid(row=0, column=0, sticky="ns")
         sidebar.columnconfigure(0, weight=1)
 
-        tb.Label(sidebar, text="账号管理", font=("Helvetica", 14, "bold")).grid(row=0, column=0, pady=(0, 10))
-        tb.Button(sidebar, text="添加账号", bootstyle="primary-outline").grid(row=1, column=0, sticky="ew", pady=5)
-        tb.Button(sidebar, text="导入资料", bootstyle="info-outline").grid(row=2, column=0, sticky="ew", pady=5)
-        tb.Button(sidebar, text="换绑手机号", bootstyle="warning-outline").grid(row=3, column=0, sticky="ew", pady=5)
+        tb.Label(sidebar, text="账号管理", font=("Helvetica", 14, "bold")).grid(row=0, column=0, pady=(0, 12))
+        tb.Button(sidebar, text="添加账号", bootstyle="primary", command=self._on_add_account).grid(row=1, column=0, sticky="ew", pady=4)
+        tb.Button(sidebar, text="编辑账号", bootstyle="info", command=self._on_edit_account).grid(row=2, column=0, sticky="ew", pady=4)
+        tb.Button(sidebar, text="删除账号", bootstyle="danger", command=self._on_delete_account).grid(row=3, column=0, sticky="ew", pady=4)
+        tb.Button(sidebar, text="微信登录/绑定", bootstyle="success", command=self._on_login_account).grid(row=4, column=0, sticky="ew", pady=10)
+        tb.Separator(sidebar, orient="horizontal").grid(row=5, column=0, sticky="ew", pady=8)
+        tb.Button(sidebar, text="刷新列表", bootstyle="secondary", command=self.refresh_accounts).grid(row=6, column=0, sticky="ew", pady=4)
 
-        content = tb.Frame(main_frame, padding=10)
+        content = tb.Frame(main_frame, padding=12)
         content.grid(row=0, column=1, sticky="nsew")
         content.columnconfigure(0, weight=1)
         content.rowconfigure(1, weight=1)
 
         tb.Label(content, text="账号列表", font=("Helvetica", 14, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 10))
 
-        tree = ttk.Treeview(content, columns=("wechat", "phone", "quota", "status"), show="headings", height=15)
+        tree = ttk.Treeview(content, columns=("wechat", "display_name", "phone", "quota", "status"), show="headings", height=16)
         tree.heading("wechat", text="微信号")
+        tree.heading("display_name", text="备注")
         tree.heading("phone", text="手机号")
         tree.heading("quota", text="今日提交/上限")
         tree.heading("status", text="状态")
         tree.column("wechat", width=180)
+        tree.column("display_name", width=160)
         tree.column("phone", width=140)
         tree.column("quota", width=160)
         tree.column("status", width=200)
         tree.grid(row=1, column=0, sticky="nsew")
+        self.tree = tree
+        tree.bind("<Double-1>", lambda _e: self._on_edit_account())
 
         scrollbar = ttk.Scrollbar(content, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=scrollbar.set)
         scrollbar.grid(row=1, column=1, sticky="ns")
 
-        placeholder = [
-            ("wx_demo1", "13800001111", "1/3", "可提交"),
-            ("wx_demo2", "13800002222", "3/3", "今日额度用尽"),
-        ]
-        for item in placeholder:
-            tree.insert("", tk.END, values=item)
-
-        status_bar = tb.Label(self, text="准备就绪", anchor="w", bootstyle="secondary")
+        status_bar = tb.Label(self, textvariable=self.status_var, anchor="w", bootstyle="secondary")
         status_bar.grid(row=1, column=0, sticky="ew")
+
+    def refresh_accounts(self) -> None:
+        if self.tree is None:
+            return
+        try:
+            accounts = self.account_service.list_accounts()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("加载账号失败")
+            messagebox.showerror("错误", f"加载账号失败: {exc}")
+            return
+
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        today = dt_today_string()
+        for acc in accounts:
+            quota = acc.quota_count if acc.quota_date == today else 0
+            quota_text = f"{quota}/3"
+            status = "已绑定手机号" if acc.phone else "未绑定手机号"
+            self.tree.insert(
+                "",
+                tk.END,
+                values=(
+                    acc.wechat_id,
+                    acc.display_name or "-",
+                    acc.phone or "-",
+                    quota_text,
+                    status,
+                ),
+            )
+
+        self._set_status(f"当前共 {len(accounts)} 个账号")
+
+    def _on_add_account(self) -> None:
+        dialog = AccountDialog(self, "添加账号")
+        if not dialog.result:
+            return
+        try:
+            account = self.account_service.create_account(
+                dialog.result["wechat_id"],
+                dialog.result.get("display_name", ""),
+                dialog.result.get("phone", ""),
+            )
+        except AccountExistsError as exc:
+            messagebox.showwarning("提示", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("创建账号失败")
+            messagebox.showerror("错误", f"创建账号失败: {exc}")
+            return
+        self.refresh_accounts()
+        messagebox.showinfo("成功", f"已添加账号 {account.wechat_id}")
+
+    def _on_edit_account(self) -> None:
+        wechat_id = self._get_selected_wechat()
+        if not wechat_id:
+            return
+        accounts = {acc.wechat_id: acc for acc in self.account_service.list_accounts()}
+        account = accounts.get(wechat_id)
+        if account is None:
+            messagebox.showerror("错误", "选中的账号不存在，请刷新")
+            return
+        dialog = AccountDialog(
+            self,
+            "编辑账号",
+            initial={
+                "wechat_id": account.wechat_id,
+                "display_name": account.display_name,
+                "phone": account.phone,
+            },
+            disable_wechat=True,
+        )
+        if not dialog.result:
+            return
+        try:
+            updated = self.account_service.update_account(
+                wechat_id,
+                display_name=dialog.result.get("display_name"),
+                phone=dialog.result.get("phone"),
+            )
+        except AccountNotFoundError as exc:
+            messagebox.showerror("错误", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("更新账号失败")
+            messagebox.showerror("错误", f"更新账号失败: {exc}")
+            return
+        self.refresh_accounts()
+        messagebox.showinfo("成功", f"已更新账号 {updated.wechat_id}")
+
+    def _on_delete_account(self) -> None:
+        wechat_id = self._get_selected_wechat()
+        if not wechat_id:
+            return
+        if not messagebox.askyesno("确认", f"确定要删除账号 {wechat_id} 吗？"):
+            return
+        try:
+            self.account_service.delete_account(wechat_id)
+        except AccountNotFoundError as exc:
+            messagebox.showerror("错误", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("删除账号失败")
+            messagebox.showerror("错误", f"删除账号失败: {exc}")
+            return
+        self.refresh_accounts()
+        messagebox.showinfo("成功", f"账号 {wechat_id} 已删除")
+
+    def _on_login_account(self) -> None:
+        wechat_id = self._get_selected_wechat()
+        if not wechat_id:
+            return
+        accounts = {acc.wechat_id: acc for acc in self.account_service.list_accounts()}
+        account = accounts.get(wechat_id)
+        if account is None:
+            messagebox.showerror("错误", "选中的账号不存在，请刷新")
+            return
+        dialog = LoginDialog(
+            self,
+            title="微信登录/绑定",
+            default_wxid=account.wechat_id,
+            default_phone=account.phone,
+            auto_enabled=self.login_service.auto_fetcher.is_enabled(),
+        )
+        if not dialog.result:
+            return
+        wxid = dialog.result["wxid"]
+        phone = dialog.result["phone"]
+        mode = dialog.result["mode"]
+        try:
+            context = self.login_service.start_login(wechat_id=wechat_id, wxid=wxid, phone=phone)
+            messagebox.showinfo("提示", "验证码已发送，请注意查收", parent=self)
+        except LoginError as exc:
+            messagebox.showerror("错误", str(exc))
+            return
+
+        if mode == "auto":
+            try:
+                sms_code = self.login_service.fetch_auto_code(phone)
+            except LoginError as exc:
+                messagebox.showerror("错误", f"自动获取验证码失败: {exc}")
+                return
+        else:
+            sms_code = simpledialog.askstring("验证码", "请输入短信验证码", parent=self)
+            if not sms_code:
+                messagebox.showinfo("提示", "已取消绑定流程")
+                return
+
+        try:
+            self.login_service.complete_login(context, sms_code)
+        except LoginError as exc:
+            messagebox.showerror("错误", str(exc))
+            return
+
+        self.refresh_accounts()
+        messagebox.showinfo("成功", f"账号 {wechat_id} 已完成绑定并重置额度")
+
+    def _get_selected_wechat(self) -> Optional[str]:
+        if self.tree is None:
+            return None
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showinfo("提示", "请先选择一个账号")
+            return None
+        item_id = selection[0]
+        values = self.tree.item(item_id, "values")
+        return values[0] if values else None
+
+    def _set_status(self, text: str) -> None:
+        self.status_var.set(text)
+
+
+def dt_today_string() -> str:
+    from datetime import datetime
+
+    return datetime.now().strftime("%Y-%m-%d")
 
 
 def run_app() -> None:

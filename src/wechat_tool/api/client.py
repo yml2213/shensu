@@ -7,7 +7,8 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-DEFAULT_BASE = "https://www.securityeb.com/ktfsr"
+KTFSR_BASE = "https://www.securityeb.com/ktfsr"
+WECHAT_BASE = "https://www.securityeb.com"
 DEFAULT_UA_ADD = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 6_1_3 like Mac OS X) "
     "AppleWebKit/536.26 (KHTML, like Gecko) Mobile/10B329 MicroMessenger/5.0.1"
@@ -23,12 +24,12 @@ class SubmissionApiClient:
 
     def __init__(
         self,
-        base_url: str = DEFAULT_BASE,
+        base_url: str = KTFSR_BASE,
         ua_add: Optional[str] = None,
         ua_upload: Optional[str] = None,
         timeout: float = 20.0,
     ) -> None:
-        self.base = (base_url or DEFAULT_BASE).rstrip("/")
+        self.base = (base_url or KTFSR_BASE).rstrip("/")
         self.ua_add = ua_add or DEFAULT_UA_ADD
         self.ua_upload = ua_upload or DEFAULT_UA_UPLOAD
         self.timeout = timeout

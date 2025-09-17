@@ -1,0 +1,26 @@
+{
+  "accounts": [
+    {
+      "wechat_id": "wx_demo2",
+      "display_name": "示例二",
+      "phone": "13800138001",
+      "quota_date": "",
+      "quota_count": 0,
+      "person_id": null,
+      "events": [],
+      "created_at": "2025-09-17T22:23:01",
+      "updated_at": "2025-09-17T22:23:01"
+    },
+    {
+      "wechat_id": "amaz1nglove",
+      "display_name": "gee-test1",
+      "phone": "15851314999",
+      "quota_date": "",
+      "quota_count": 0,
+      "person_id": null,
+      "events": [],
+      "created_at": "2025-09-17T23:21:51",
+      "updated_at": "2025-09-17T23:21:51"
+    }
+  ]
+}

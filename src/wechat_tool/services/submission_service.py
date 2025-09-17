@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ..api.client import DEFAULT_BASE, SubmissionApiClient
+from ..api.client import KTFSR_BASE, SubmissionApiClient
 from ..utils.crypto import encrypt_phone, encrypt_sign
 from ..utils.files import build_filename
 
@@ -23,7 +23,7 @@ class SubmissionConfig:
     company_name: str
     plea_reason: str
     file_path: Path
-    base: str = DEFAULT_BASE
+    base: str = KTFSR_BASE
     ua_add_plea: Optional[str] = None
     ua_upload: Optional[str] = None
 

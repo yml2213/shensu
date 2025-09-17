@@ -68,6 +68,7 @@ class Session:
     login_code: str
     expired_at: str
     last_fetch_at: str
+    openid: str = ""
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Session":
@@ -76,6 +77,7 @@ class Session:
             login_code=data.get("login_code", ""),
             expired_at=data.get("expired_at", ""),
             last_fetch_at=data.get("last_fetch_at", ""),
+            openid=data.get("openid", ""),
         )
 
     def to_dict(self) -> Dict[str, Any]:
