@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 APP_ID = "wxe4a8657e84049860"
 AUTH_URL = "https://www.securityeb.com"
-AUTHORIZE_ENDPOINT = "http://gee.myds.me:8055/api/OfficialAccounts/OauthAuthorize"
+AUTHORIZE_ENDPOINT = "http://gee.myds.me:8005/api/OfficialAccounts/OauthAuthorize"
 DEFAULT_UA = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 "
     "(KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.54(0x1800363a) NetType/WIFI Language/zh_CN"

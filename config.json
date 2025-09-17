@@ -1,0 +1,12 @@
+{
+  "login": {
+    "cookie": "",
+    "auto_sms": {
+      "enabled": false,
+      "url": "",
+      "method": "GET",
+      "headers": {},
+      "response_key": "code"
+    }
+  }
+}
