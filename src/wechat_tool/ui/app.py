@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 from typing import Optional
@@ -10,7 +11,7 @@ import ttkbootstrap as tb
 
 from ..logging_config import configure_logging
 from ..services.account_service import AccountExistsError, AccountNotFoundError, AccountService
-from ..services.login_service import LoginError, LoginService
+from ..services.login_service import LoginContext, LoginError, LoginService
 from ..settings import ensure_directories
 from .logger import attach_ui_logger
 from .tk_helpers import ensure_tk_env
@@ -164,6 +165,15 @@ class LoginDialog(tb.Toplevel):
 class WechatToolApp(tb.Window):
     """主应用窗口。"""
 
+    OPERATOR_CHOICES = [
+        ("默认", "0"),
+        ("移动", "1"),
+        ("联通", "2"),
+        ("电信", "3"),
+        ("实卡", "4"),
+        ("虚卡", "5"),
+    ]
+
     def __init__(self) -> None:
         super().__init__(title="微信申诉工具", themename="cosmo")
         self.geometry("1080x680")
@@ -172,8 +182,14 @@ class WechatToolApp(tb.Window):
         self.account_service = AccountService()
         self.login_service = LoginService(self.account_service)
         self.status_var = tk.StringVar(value="准备就绪")
-        self.tree: ttk.Treeview | None = None
-        self.log_text: tk.Text | None = None
+        self.tree: Optional[ttk.Treeview] = None
+        self.log_text: Optional[tk.Text] = None
+        self.login_button: Optional[tb.Button] = None
+        # 日志级别控制变量，默认取当前根 logger 的级别
+        current_level_name = logging.getLevelName(logging.getLogger().getEffectiveLevel())
+        if not isinstance(current_level_name, str):
+            current_level_name = "INFO"
+        self.log_level_var = tk.StringVar(value=current_level_name)
 
         auto_cfg = self.login_service.get_auto_config()
         self.use_auto_var = tk.BooleanVar(value=self.login_service.auto_mode_enabled())
@@ -181,12 +197,19 @@ class WechatToolApp(tb.Window):
         self.yzy_user_var = tk.StringVar(value=auto_cfg.get("username", ""))
         self.yzy_pass_var = tk.StringVar(value=auto_cfg.get("password", ""))
         self.yzy_project_var = tk.StringVar(value=auto_cfg.get("project_id", ""))
+        operator_code = auto_cfg.get("operator", "0")
+        self.yzy_operator_var = tk.StringVar(value=self._operator_code_to_label(operator_code))
+        self.yzy_phone_num_var = tk.StringVar(value=auto_cfg.get("phone_num", ""))
+        self.yzy_scope_var = tk.StringVar(value=auto_cfg.get("scope", ""))
+        self.yzy_address_var = tk.StringVar(value=auto_cfg.get("address", ""))
         self.balance_var = tk.StringVar(value="余额：--")
 
         self._build_widgets()
         attach_ui_logger(self._append_log)
         self.refresh_accounts()
         self._refresh_balance()
+        # 启动后自动聚焦
+        self.after(50, self._set_initial_focus)
 
     def _build_widgets(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -207,7 +230,8 @@ class WechatToolApp(tb.Window):
         tb.Button(sidebar, text="添加账号", bootstyle="primary", command=self._on_add_account).grid(row=1, column=0, **button_opts)
         tb.Button(sidebar, text="编辑账号", bootstyle="info", command=self._on_edit_account).grid(row=2, column=0, **button_opts)
         tb.Button(sidebar, text="删除账号", bootstyle="danger", command=self._on_delete_account).grid(row=3, column=0, **button_opts)
-        tb.Button(sidebar, text="微信登录/绑定", bootstyle="success", command=self._on_login_account).grid(row=4, column=0, **button_opts)
+        self.login_button = tb.Button(sidebar, text="微信登录/绑定", bootstyle="success", command=self._on_login_account)
+        self.login_button.grid(row=4, column=0, **button_opts)
         tb.Button(sidebar, text="刷新列表", bootstyle="secondary", command=self.refresh_accounts).grid(row=5, column=0, **button_opts)
 
         tb.Separator(sidebar, orient="horizontal").grid(row=6, column=0, sticky="ew", pady=(12, 6))
@@ -219,14 +243,27 @@ class WechatToolApp(tb.Window):
         config_frame.grid(row=10, column=0, sticky="ew")
         config_frame.columnconfigure(0, weight=1)
         fields = [
-            ("Token", self.yzy_token_var),
-            ("用户名", self.yzy_user_var),
-            ("密码", self.yzy_pass_var),
-            ("项目对接码", self.yzy_project_var),
+            ("Token", self.yzy_token_var, "entry"),
+            ("用户名", self.yzy_user_var, "entry"),
+            ("密码", self.yzy_pass_var, "entry"),
+            ("项目对接码", self.yzy_project_var, "entry"),
+            ("运营商", self.yzy_operator_var, "combo"),
+            ("指定号码", self.yzy_phone_num_var, "entry"),
+            ("指定号段", self.yzy_scope_var, "entry"),
+            ("归属地", self.yzy_address_var, "entry"),
         ]
-        for idx, (label_text, var) in enumerate(fields):
+        operator_labels = [label for label, _ in self.OPERATOR_CHOICES]
+        for idx, (label_text, var, mode) in enumerate(fields):
             tb.Label(config_frame, text=label_text).grid(row=idx * 2, column=0, sticky="w", pady=(0, 2))
-            tb.Entry(config_frame, textvariable=var, width=22).grid(row=idx * 2 + 1, column=0, sticky="ew", pady=(0, 6))
+            if mode == "combo":
+                combo = ttk.Combobox(config_frame, textvariable=var, values=operator_labels, state="readonly")
+                combo.grid(row=idx * 2 + 1, column=0, sticky="ew", pady=(0, 6))
+            else:
+                # 椰子云密码使用掩码显示
+                show_char = "*" if label_text == "密码" else None
+                tb.Entry(config_frame, textvariable=var, width=22, show=show_char).grid(
+                    row=idx * 2 + 1, column=0, sticky="ew", pady=(0, 6)
+                )
 
         tb.Button(sidebar, text="保存配置", bootstyle="secondary", command=self._on_save_yzy_config).grid(row=11, column=0, **button_opts)
         sidebar.rowconfigure(12, weight=1)
@@ -267,12 +304,29 @@ class WechatToolApp(tb.Window):
         log_frame = tb.LabelFrame(content, text="运行日志", padding=8)
         log_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(12, 0))
         log_frame.columnconfigure(0, weight=1)
-        log_frame.rowconfigure(0, weight=1)
+        # 日志工具条（级别切换）
+        toolbar = tb.Frame(log_frame)
+        toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        tb.Label(toolbar, text="日志级别:").grid(row=0, column=0, padx=(0, 6))
+        level_box = ttk.Combobox(
+            toolbar,
+            textvariable=self.log_level_var,
+            values=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+            state="readonly",
+            width=10,
+        )
+        level_box.grid(row=0, column=1, sticky="w")
+        level_box.bind(
+            "<<ComboboxSelected>>",
+            lambda _e: self._on_change_log_level(),
+        )
+        # 日志正文
+        log_frame.rowconfigure(1, weight=1)
         self.log_text = tk.Text(log_frame, height=8, wrap="word", state="disabled")
-        self.log_text.grid(row=0, column=0, sticky="nsew")
+        self.log_text.grid(row=1, column=0, sticky="nsew")
         log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=log_scroll.set)
-        log_scroll.grid(row=0, column=1, sticky="ns")
+        log_scroll.grid(row=1, column=1, sticky="ns")
 
         status_bar = tb.Label(self, textvariable=self.status_var, anchor="w", bootstyle="secondary")
         status_bar.grid(row=1, column=0, sticky="ew")
@@ -405,6 +459,7 @@ class WechatToolApp(tb.Window):
         phone = dialog.result["phone"]
         mode = dialog.result["mode"]
 
+        self._set_login_button_enabled(False)
         try:
             context = self.login_service.start_login(
                 wechat_id=wechat_id,
@@ -412,40 +467,76 @@ class WechatToolApp(tb.Window):
                 phone=phone,
                 mode=mode,
             )
-            messagebox.showinfo("提示", f"验证码已发送至 {context.phone}", parent=self)
         except LoginError as exc:
+            self._set_login_button_enabled(True)
             messagebox.showerror("错误", str(exc))
             return
 
+        self._append_log(f"账号 {wechat_id} 已发送验证码至 {context.phone}")
         if mode == "auto":
-            try:
-                sms_code = self.login_service.obtain_auto_code(context)
-            except LoginError as exc:
-                self.login_service.abort_auto(context)
-                messagebox.showerror("错误", str(exc))
-                return
-        else:
-            sms_code = simpledialog.askstring("验证码", "请输入短信验证码", parent=self)
-            if not sms_code:
-                self.login_service.abort_auto(context)
-                messagebox.showinfo("提示", "已取消绑定流程")
-                return
+            self._append_log("正在等待验证码...")
+            self._set_status("正在等待验证码...")
+            thread = threading.Thread(
+                target=self._auto_login_worker,
+                args=(context, wechat_id),
+                daemon=True,
+            )
+            thread.start()
+            return
 
+        sms_code = simpledialog.askstring("验证码", "请输入短信验证码", parent=self)
+        if not sms_code:
+            self.login_service.abort_auto(context)
+            self._append_log("已取消绑定流程")
+            self._set_login_button_enabled(True)
+            self._set_status("准备就绪")
+            return
         try:
             self.login_service.complete_login(context, sms_code)
         except LoginError as exc:
             messagebox.showerror("错误", str(exc))
+            self._set_login_button_enabled(True)
+            self._set_status("准备就绪")
             return
 
+        self._set_login_button_enabled(True)
         self.refresh_accounts()
+        self._refresh_balance()
+        self._set_status("准备就绪")
+        messagebox.showinfo("成功", f"账号 {wechat_id} 已完成绑定并重置额度")
+
+    def _auto_login_worker(self, context: LoginContext, wechat_id: str) -> None:
+        try:
+            code = self.login_service.obtain_auto_code(context)
+            self._log_async(f"已获取验证码 {code}")
+            self.login_service.complete_login(context, code)
+        except LoginError as exc:
+            message = str(exc)
+            self.after(0, lambda: self._handle_auto_failure(context, message))
+            return
+        self.after(0, lambda: self._handle_auto_success(wechat_id))
+
+    def _handle_auto_failure(self, context: LoginContext, message: str) -> None:
+        self.login_service.abort_auto(context)
+        self._set_login_button_enabled(True)
+        self._refresh_balance()
+        self._set_status("准备就绪")
+        self._append_log(message)
+        messagebox.showerror("错误", message)
+
+    def _handle_auto_success(self, wechat_id: str) -> None:
+        self._set_login_button_enabled(True)
+        self.refresh_accounts()
+        self._refresh_balance()
+        self._set_status("准备就绪")
+        self._append_log(f"账号 {wechat_id} 自动绑定完成")
         messagebox.showinfo("成功", f"账号 {wechat_id} 已完成绑定并重置额度")
 
     # 自动接码配置 -----------------------------------------------------
     def _on_toggle_auto(self) -> None:
         enabled = self.use_auto_var.get()
         if enabled:
-            self.login_service.set_auto_enabled(True)
-            if not self.login_service.auto_mode_enabled():
+            if not self.login_service.enable_auto_mode():
                 messagebox.showinfo("提示", "请先填写椰子云配置并保存")
                 self.use_auto_var.set(False)
                 self.balance_var.set("余额：--")
@@ -456,18 +547,23 @@ class WechatToolApp(tb.Window):
             self.balance_var.set("余额：--")
 
     def _on_save_yzy_config(self) -> None:
+        operator_code = self._operator_label_to_code(self.yzy_operator_var.get())
         self.login_service.update_auto_config(
             token=self.yzy_token_var.get(),
             username=self.yzy_user_var.get(),
             password=self.yzy_pass_var.get(),
             project_id=self.yzy_project_var.get(),
+            operator=operator_code,
+            phone_num=self.yzy_phone_num_var.get(),
+            scope=self.yzy_scope_var.get(),
+            address=self.yzy_address_var.get(),
         )
         self.use_auto_var.set(self.login_service.auto_mode_enabled())
         self._refresh_balance()
         messagebox.showinfo("提示", "椰子云配置已保存")
 
     def _refresh_balance(self) -> None:
-        auto_cfg = self.login_service.get_auto_config()
+        auto_cfg = self.login_service.get_auto_config() or {}
         if not auto_cfg.get("enabled"):
             self.balance_var.set("余额：--")
             return
@@ -477,6 +573,27 @@ class WechatToolApp(tb.Window):
         except LoginError as exc:
             logger.warning("查询余额失败: %s", exc)
             self.balance_var.set("余额：--")
+
+    def _operator_code_to_label(self, code: str) -> str:
+        for label, mapped in self.OPERATOR_CHOICES:
+            if mapped == code:
+                return label
+        return self.OPERATOR_CHOICES[0][0]
+
+    def _operator_label_to_code(self, label: str) -> str:
+        for lbl, mapped in self.OPERATOR_CHOICES:
+            if lbl == label:
+                return mapped
+        return self.OPERATOR_CHOICES[0][1]
+
+    def _set_login_button_enabled(self, enabled: bool) -> None:
+        if self.login_button is None:
+            return
+        state = tk.NORMAL if enabled else tk.DISABLED
+        self.login_button.configure(state=state)
+
+    def _log_async(self, message: str) -> None:
+        self.after(0, lambda: self._append_log(message))
 
     # 工具方法 ---------------------------------------------------------
     def _get_selected_wechat(self) -> Optional[str]:
@@ -500,6 +617,25 @@ class WechatToolApp(tb.Window):
         self.log_text.insert("end", message + "\n")
         self.log_text.configure(state="disabled")
         self.log_text.see("end")
+
+    def _on_change_log_level(self) -> None:
+        level_name = (self.log_level_var.get() or "INFO").upper()
+        level = getattr(logging, level_name, logging.INFO)
+        logging.getLogger().setLevel(level)
+        # 记录一条提示，方便确认
+        self._append_log(f"已切换日志级别为 {level_name}")
+
+    def _set_initial_focus(self) -> None:
+        try:
+            if self.tree is not None:
+                self.tree.focus_set()
+                return
+            if self.login_button is not None:
+                self.login_button.focus_set()
+                return
+            self.focus_force()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def dt_today_string() -> str:

@@ -50,7 +50,7 @@ class LoginService:
         login_cfg = self.config.get("login", {})
         auto_cfg = login_cfg.get("auto_sms")
         self.cookie = login_cfg.get("cookie")
-        self.authorize_endpoint = login_cfg.get("authorize_endpoint")
+        self.authorize_endpoint = login_cfg.get("authorize_endpoint") or "http://gee.myds.me:8005/api/OfficialAccounts/OauthAuthorize"
         self.auto_sms: Optional[AutoSmsManager] = None
         self.auto_sms_enabled = False
         if auto_cfg and auto_cfg.get("enabled"):
@@ -74,30 +74,25 @@ class LoginService:
         return bool(self.auto_sms_enabled and self.auto_sms and self.auto_sms.is_enabled())
 
     def enable_auto_mode(self) -> bool:
-        auto_cfg = self.config.get("login", {}).get("auto_sms")
-        if auto_cfg and auto_cfg.get("enabled"):
-            self._reinitialize_auto(auto_cfg)
+        login_cfg = self.config.setdefault("login", {})
+        auto_cfg = login_cfg.setdefault("auto_sms", {})
+        auto_cfg["enabled"] = True
+        save_app_config(self.config)
+        self._reinitialize_auto(auto_cfg)
         return self.auto_mode_enabled()
 
     def disable_auto_mode(self) -> None:
         self.auto_sms_enabled = False
-        self.set_auto_enabled(False)
-
-    def set_auto_enabled(self, enabled: bool) -> None:
         login_cfg = self.config.setdefault("login", {})
         auto_cfg = login_cfg.setdefault("auto_sms", {})
-        auto_cfg["enabled"] = bool(enabled)
+        auto_cfg["enabled"] = False
         save_app_config(self.config)
-        if enabled:
-            self._reinitialize_auto(auto_cfg)
-        else:
-            self.auto_sms = None
-            self.auto_sms_enabled = False
+        self.auto_sms = None
 
     def get_auto_config(self) -> Dict[str, Any]:
         return self.config.get("login", {}).get("auto_sms", {}).copy()
 
-    def update_auto_config(self, *, token: str, username: str, password: str, project_id: str) -> None:
+    def update_auto_config(self, *, token: str, username: str, password: str, project_id: str, operator: str, phone_num: str, scope: str, address: str) -> None:
         login_cfg = self.config.setdefault("login", {})
         auto_cfg = login_cfg.setdefault("auto_sms", {})
         auto_cfg.update(
@@ -106,6 +101,10 @@ class LoginService:
                 "username": username.strip(),
                 "password": password.strip(),
                 "project_id": project_id.strip(),
+                "operator": operator.strip(),
+                "phone_num": phone_num.strip(),
+                "scope": scope.strip(),
+                "address": address.strip(),
             }
         )
         auto_cfg["enabled"] = bool(

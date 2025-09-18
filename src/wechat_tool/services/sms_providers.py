@@ -45,6 +45,10 @@ class YzySmsProvider(BaseSmsProvider):
         self.password = config.get("password")
         self._token = config.get("token")
         self.project_id = config.get("project_id")
+        self.operator = (config.get("operator") or "").strip()
+        self.phone_num = (config.get("phone_num") or "").strip()
+        self.scope = (config.get("scope") or "").strip()
+        self.address = (config.get("address") or "").strip()
         self.poll_interval = float(config.get("poll_interval", 5))
         self.max_wait_seconds = float(config.get("max_wait_seconds", 120))
         self.min_remaining = int(config.get("min_remaining", 10))
@@ -59,6 +63,14 @@ class YzySmsProvider(BaseSmsProvider):
     def acquire_phone(self) -> SmsSession:
         token = self._ensure_token()
         params = {"token": token, "project_id": self.project_id}
+        if self.operator and self.operator != "0":
+            params["operator"] = self.operator
+        if self.phone_num:
+            params["phone_num"] = self.phone_num
+        if self.scope:
+            params["scope"] = self.scope
+        if self.address:
+            params["address"] = self.address
         resp = self._request("/api/get_mobile", params=params)
         data = resp.json()
         if data.get("message") != "ok":
@@ -82,15 +94,33 @@ class YzySmsProvider(BaseSmsProvider):
                 "phone_num": session.phone,
             }
             resp = self._request("/api/get_message", params=params)
+            # 输出原始返回与解析后的 JSON（DEBUG 级别，通过 UI 控制显示）
+            try:
+                raw_text = resp.text
+            except Exception:  # pragma: no cover - 保护性
+                raw_text = "<unavailable>"
+            logger.debug("椰子云 get_message 原始返回: %s", raw_text)
             data = resp.json()
+            logger.debug("椰子云 get_message 解析数据: %s", data)
             message = data.get("message", "")
             if message == "ok":
+                # 1) 先尝试顶层 code 字段
+                from re import compile as _re_compile
+                _pat = _re_compile(r"\b(\d{4,6})\b")
+                top_code = data.get("code")
+                if isinstance(top_code, str):
+                    m = _pat.search(top_code)
+                    if m:
+                        code = m.group(1)
+                        logger.info("椰子云获取验证码(顶层 code) %s", code)
+                        return code
+                # 2) 再尝试 data 列表/字典中的文本字段
                 code = self._extract_code(data.get("data"))
                 if code:
                     logger.info("椰子云获取验证码 %s", code)
                     return code
                 last_error = "未获取到验证码"
-            elif message == "not_receive" or message == "retry":
+            elif message in ("not_receive", "retry", "短信还未到达,请继续获取", "短信还未到达，请继续获取"):
                 last_error = "短信尚未到达"
             else:
                 last_error = f"拉取短信失败: {data}"
@@ -145,11 +175,23 @@ class YzySmsProvider(BaseSmsProvider):
 
     def _request(self, path: str, params: Dict[str, Any]) -> httpx.Response:
         url = f"{self.base_url}{path}"
+        # Debug 输出请求（脱敏参数）
+        masked = dict(params)
+        if "token" in masked and masked["token"]:
+            masked["token"] = masked["token"][:4] + "***"  # 仅保留前缀
+        if "phone_num" in masked and masked["phone_num"]:
+            p = str(masked["phone_num"])  # 只显示后 4 位
+            masked["phone_num"] = ("*" * max(0, len(p) - 4)) + p[-4:]
+        if "password" in masked and masked["password"]:
+            masked["password"] = "***"
+        logger.debug("HTTP GET %s params=%s", url, masked)
         resp = self._client.get(url, params=params)
+        logger.debug("HTTP %s -> %s", url, resp.status_code)
         if resp.status_code >= 500 and self.backup_url:
             backup_url = f"{self.backup_url}{path}"
             logger.warning("主域名请求失败，尝试备用域名 %s", backup_url)
             resp = self._client.get(backup_url, params=params)
+            logger.debug("HTTP %s -> %s", backup_url, resp.status_code)
         resp.raise_for_status()
         return resp
 
@@ -172,7 +214,7 @@ class YzySmsProvider(BaseSmsProvider):
                 if isinstance(item, str):
                     texts.append(item)
                 elif isinstance(item, dict):
-                    for key in ("sms", "message", "content", "sms_message"):
+                    for key in ("sms", "message", "content", "sms_message", "modle"):
                         val = item.get(key)
                         if isinstance(val, str):
                             texts.append(val)
