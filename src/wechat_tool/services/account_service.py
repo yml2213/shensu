@@ -10,6 +10,7 @@ from ..storage.json_store import JSONStore
 from ..storage.models import Account
 
 ACCOUNTS_FILE = DATA_DIR / "accounts.json"
+SUBMISSIONS_FILE = DATA_DIR / "submissions.json"
 
 
 def _now_str() -> str:
@@ -30,6 +31,7 @@ class AccountService:
     def __init__(self) -> None:
         ensure_directories()
         self.store = JSONStore(ACCOUNTS_FILE, default_factory=lambda: {"accounts": []})
+        self.submission_store = JSONStore(SUBMISSIONS_FILE, default_factory=lambda: {"submissions": []})
 
     def list_accounts(self) -> List[Account]:
         data = self.store.load()
@@ -112,6 +114,35 @@ class AccountService:
                 )
                 accounts[idx] = updated
                 self._save(accounts)
+                return updated
+        raise AccountNotFoundError(f"账号 {wechat_id} 不存在")
+
+    def append_event(self, wechat_id: str, event: dict) -> Account:
+        """为账号追加一条事件记录（例如提交成功）。"""
+        accounts = self.list_accounts()
+        for idx, acc in enumerate(accounts):
+            if acc.wechat_id == wechat_id:
+                events = list(acc.events)
+                ev = dict(event)
+                ev.setdefault("wechat_id", wechat_id)
+                events.append(ev)
+                updated = replace(
+                    acc,
+                    events=events,
+                    updated_at=_now_str(),
+                )
+                accounts[idx] = updated
+                self._save(accounts)
+                # 追加到全局 submissions.json 文件，便于外部查阅
+                try:
+                    def mutator(data):
+                        items = list(data.get("submissions", []))
+                        items.append(ev)
+                        data["submissions"] = items
+                        return data
+                    self.submission_store.update(mutator)
+                except Exception:
+                    pass
                 return updated
         raise AccountNotFoundError(f"账号 {wechat_id} 不存在")
 

@@ -427,19 +427,21 @@ class WechatToolApp(tb.Window):
 
         style = ttk.Style(self)
         style.configure("Account.Treeview", rowheight=28, padding=0)
-        style.configure("Account.Treeview.Heading", anchor="center")
+        # 不强制表头居中，由每列自行设置以匹配列内容
+        style.configure("Account.Treeview.Heading")
 
-        columns = ("wechat", "display_name", "phone", "quota", "status")
+        columns = ("wechat", "display_name", "phone", "quota", "status", "last_submit")
         tree = ttk.Treeview(content, columns=columns, show="headings", height=18, style="Account.Treeview")
         headings = {
             "wechat": ("微信号", 180, tk.W),
             "display_name": ("备注", 160, tk.W),
             "phone": ("手机号", 150, tk.CENTER),
             "quota": ("今日提交/上限", 170, tk.CENTER),
-            "status": ("状态", 160, tk.CENTER),
+            "status": ("状态", 120, tk.CENTER),
+            "last_submit": ("最近申诉手机号", 180, tk.CENTER),
         }
         for cid, (title, width, anchor) in headings.items():
-            tree.heading(cid, text=title, anchor="center")
+            tree.heading(cid, text=title, anchor=anchor)
             tree.column(cid, width=width, anchor=anchor, stretch=False)
         tree.grid(row=1, column=0, sticky="nsew")
         tree.bind("<Double-1>", lambda _e: self._on_edit_account())
@@ -492,10 +494,20 @@ class WechatToolApp(tb.Window):
 
         self.tree.delete(*self.tree.get_children())
         today = dt_today_string()
+        from datetime import datetime
         for acc in accounts:
             quota = acc.quota_count if acc.quota_date == today else 0
             quota_text = f"{quota}/3"
             status = "已绑定手机号" if acc.phone else "未绑定手机号"
+            # 最近提交信息（仅展示申诉手机号）
+            last_text = "-"
+            if acc.events:
+                # 找到最后一条提交事件
+                for ev in reversed(acc.events):
+                    if isinstance(ev, dict) and ev.get("type") == "submission":
+                        cphone = ev.get("complaint_phone") or "-"
+                        last_text = cphone
+                        break
             self.tree.insert(
                 "",
                 tk.END,
@@ -505,6 +517,7 @@ class WechatToolApp(tb.Window):
                     acc.phone or "-",
                     quota_text,
                     status,
+                    last_text,
                 ),
             )
         self._set_status(f"当前共 {len(accounts)} 个账号")
@@ -865,6 +878,20 @@ class WechatToolApp(tb.Window):
         # 记录提交次数并刷新列表
         try:
             self.account_service.record_submission(wechat_id)
+            # 追加事件明细
+            from datetime import datetime
+            event = {
+                "type": "submission",
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "wechat_id": wechat_id,
+                "filename": resp.get("filename"),
+                "complaint_phone": cfg.complaint_phone,
+                "user_phone": cfg.user_phone,
+                "company_id": cfg.company_id,
+                "company_name": cfg.company_name,
+                "plea_reason": cfg.plea_reason,
+            }
+            self.account_service.append_event(wechat_id, event)
             self.refresh_accounts()
         except Exception as exc:  # noqa: BLE001
             logger.warning("更新提交计数失败: %s", exc)
