@@ -28,20 +28,25 @@ jobs:
       - name: Build exe with PyInstaller
         shell: pwsh
         run: |
-          pyinstaller main.py `
-            --clean `
-            --noconfirm `
-            --windowed `
-            --onedir `
-            --name WechatTool `
-            --add-data "media;media" `
-            --add-data "config.json;."
+          $ErrorActionPreference = 'Stop'
+          $args = @(
+            'main.py',
+            '--clean',
+            '--noconfirm',
+            '--windowed',
+            '--onedir',
+            '--name','WechatTool',
+            '--add-data','media;media',
+            '--add-data','config.json;.'
+          )
+          pyinstaller @args
 
       - name: Archive artifact
-        shell: bash
+        shell: pwsh
         run: |
-          cd dist
-          7z a -tzip WechatTool-win-x64.zip WechatTool
+          $ErrorActionPreference = 'Stop'
+          if (Test-Path dist\WechatTool-win-x64.zip) { Remove-Item dist\WechatTool-win-x64.zip -Force }
+          Compress-Archive -Path dist\WechatTool\* -DestinationPath dist\WechatTool-win-x64.zip -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
