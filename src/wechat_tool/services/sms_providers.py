@@ -112,6 +112,21 @@ class YzySmsProvider(BaseSmsProvider):
         except Exception as exc:  # noqa: BLE001
             logger.warning("释放/拉黑手机号失败: %s", exc)
 
+    def get_balance(self) -> str:
+        token = self._ensure_token()
+        resp = self._request("/api/get_myinfo", params={"token": token})
+        data = resp.json()
+        if data.get("message") != "ok":
+            raise SmsProviderError(f"获取余额失败: {data}")
+        entries = data.get("data") or []
+        if entries and isinstance(entries, list):
+            money = entries[0].get("money")
+        else:
+            money = None
+        if money is None:
+            raise SmsProviderError("余额数据缺失")
+        return str(money)
+
     # 帮助方法
     def _ensure_token(self) -> str:
         if self._token:
@@ -214,3 +229,10 @@ class AutoSmsManager:
             release_required = getattr(provider, "release_on_failure", True)
             if release_required:
                 provider.release_phone(session, blacklist=blacklist)
+
+    def get_balance(self) -> str:
+        if not self.provider:
+            raise SmsProviderError("未配置自动接码提供商")
+        if hasattr(self.provider, "get_balance"):
+            return self.provider.get_balance()
+        raise SmsProviderError("当前提供商不支持查询余额")

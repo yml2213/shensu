@@ -181,10 +181,12 @@ class WechatToolApp(tb.Window):
         self.yzy_user_var = tk.StringVar(value=auto_cfg.get("username", ""))
         self.yzy_pass_var = tk.StringVar(value=auto_cfg.get("password", ""))
         self.yzy_project_var = tk.StringVar(value=auto_cfg.get("project_id", ""))
+        self.balance_var = tk.StringVar(value="余额：--")
 
         self._build_widgets()
         attach_ui_logger(self._append_log)
         self.refresh_accounts()
+        self._refresh_balance()
 
     def _build_widgets(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -210,10 +212,11 @@ class WechatToolApp(tb.Window):
 
         tb.Separator(sidebar, orient="horizontal").grid(row=6, column=0, sticky="ew", pady=(12, 6))
         tb.Label(sidebar, text="椰子云配置", font=("Helvetica", 12, "bold"), anchor="w").grid(row=7, column=0, sticky="w")
-        tb.Checkbutton(sidebar, text="启用自动取卡", variable=self.use_auto_var, bootstyle="round-toggle", command=self._on_toggle_auto).grid(row=8, column=0, sticky="w", pady=(4, 8))
+        tb.Checkbutton(sidebar, text="启用自动取卡", variable=self.use_auto_var, bootstyle="round-toggle", command=self._on_toggle_auto).grid(row=8, column=0, sticky="w", pady=(4, 4))
+        tb.Label(sidebar, textvariable=self.balance_var, bootstyle="info", anchor="w").grid(row=9, column=0, sticky="w", pady=(0, 8))
 
         config_frame = tb.Frame(sidebar)
-        config_frame.grid(row=9, column=0, sticky="ew")
+        config_frame.grid(row=10, column=0, sticky="ew")
         config_frame.columnconfigure(0, weight=1)
         fields = [
             ("Token", self.yzy_token_var),
@@ -225,8 +228,8 @@ class WechatToolApp(tb.Window):
             tb.Label(config_frame, text=label_text).grid(row=idx * 2, column=0, sticky="w", pady=(0, 2))
             tb.Entry(config_frame, textvariable=var, width=22).grid(row=idx * 2 + 1, column=0, sticky="ew", pady=(0, 6))
 
-        tb.Button(sidebar, text="保存配置", bootstyle="secondary", command=self._on_save_yzy_config).grid(row=10, column=0, **button_opts)
-        sidebar.rowconfigure(11, weight=1)
+        tb.Button(sidebar, text="保存配置", bootstyle="secondary", command=self._on_save_yzy_config).grid(row=11, column=0, **button_opts)
+        sidebar.rowconfigure(12, weight=1)
 
         # 主内容区域
         content = tb.Frame(main_frame, padding=14)
@@ -237,18 +240,22 @@ class WechatToolApp(tb.Window):
 
         tb.Label(content, text="账号列表", font=("Helvetica", 14, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 8))
 
+        style = ttk.Style(self)
+        style.configure("Account.Treeview", rowheight=28, padding=0)
+        style.configure("Account.Treeview.Heading", anchor="center")
+
         columns = ("wechat", "display_name", "phone", "quota", "status")
-        tree = ttk.Treeview(content, columns=columns, show="headings", height=18)
+        tree = ttk.Treeview(content, columns=columns, show="headings", height=18, style="Account.Treeview")
         headings = {
-            "wechat": ("微信号", 180, "w"),
-            "display_name": ("备注", 160, "w"),
-            "phone": ("手机号", 150, "center"),
-            "quota": ("今日提交/上限", 170, "center"),
-            "status": ("状态", 160, "center"),
+            "wechat": ("微信号", 180, tk.W),
+            "display_name": ("备注", 160, tk.W),
+            "phone": ("手机号", 150, tk.CENTER),
+            "quota": ("今日提交/上限", 170, tk.CENTER),
+            "status": ("状态", 160, tk.CENTER),
         }
-        for cid, (text, width, anchor) in headings.items():
-            tree.heading(cid, text=text, anchor="center")
-            tree.column(cid, width=width, anchor=anchor)
+        for cid, (title, width, anchor) in headings.items():
+            tree.heading(cid, text=title, anchor="center")
+            tree.column(cid, width=width, anchor=anchor, stretch=False)
         tree.grid(row=1, column=0, sticky="nsew")
         tree.bind("<Double-1>", lambda _e: self._on_edit_account())
         self.tree = tree
@@ -437,11 +444,16 @@ class WechatToolApp(tb.Window):
     def _on_toggle_auto(self) -> None:
         enabled = self.use_auto_var.get()
         if enabled:
-            if not self.login_service.enable_auto_mode():
+            self.login_service.set_auto_enabled(True)
+            if not self.login_service.auto_mode_enabled():
                 messagebox.showinfo("提示", "请先填写椰子云配置并保存")
                 self.use_auto_var.set(False)
+                self.balance_var.set("余额：--")
+            else:
+                self._refresh_balance()
         else:
             self.login_service.disable_auto_mode()
+            self.balance_var.set("余额：--")
 
     def _on_save_yzy_config(self) -> None:
         self.login_service.update_auto_config(
@@ -451,7 +463,20 @@ class WechatToolApp(tb.Window):
             project_id=self.yzy_project_var.get(),
         )
         self.use_auto_var.set(self.login_service.auto_mode_enabled())
+        self._refresh_balance()
         messagebox.showinfo("提示", "椰子云配置已保存")
+
+    def _refresh_balance(self) -> None:
+        auto_cfg = self.login_service.get_auto_config()
+        if not auto_cfg.get("enabled"):
+            self.balance_var.set("余额：--")
+            return
+        try:
+            balance = self.login_service.fetch_balance()
+            self.balance_var.set(f"余额：{balance}")
+        except LoginError as exc:
+            logger.warning("查询余额失败: %s", exc)
+            self.balance_var.set("余额：--")
 
     # 工具方法 ---------------------------------------------------------
     def _get_selected_wechat(self) -> Optional[str]:

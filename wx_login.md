@@ -24,21 +24,23 @@
 "Data62": "",
 "Debug": ""
 }
-提取 code=071jMtFa18nsjK0sGlGa11tBro1jMtFj code 得值 2. 使用 curl -X GET 'https://www.securityeb.com/wechatService/wechatServ/getUserInfo?code=071jMtFa18nsjK0sGlGa11tBro1jMtFj' -H 'User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 19*0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.54(0x1800363a) NetType/WIFI Language/zh_CN' -H 'Accept: application/json, text/plain, */\_' -H 'Sec-Fetch-Site: same-origin' -H 'Sec-Fetch-Mode: cors' -H 'Referer: https://www.securityeb.com/?code=051vQH0002IdYU1Y8Q200b0Pjm4vQH0R&state=ebupt' -H 'Sec-Fetch-Dest: empty' -H 'Accept-Language: zh-CN,zh-Hans;q=0.9'  
-获取 openid 的值 {
-"code": 200,
-"msg": "查询成功",
-"data": {
-"openid": "oYXTH6I9ilba51LrU2ucVFXTQk9c",
-"nickname": null,
-"sex": null,
-"city": null,
-"country": null,
-"headimgurl": null,
-"privilege": null,
-"unionid": null
-}
-}
+提取 code=071jMtFa18nsjK0sGlGa11tBro1jMtFj code 得值;
+
+2. 使用 curl -X GET 'https://www.securityeb.com/wechatService/wechatServ/getUserInfo?code=071jMtFa18nsjK0sGlGa11tBro1jMtFj' -H 'User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 19*0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.54(0x1800363a) NetType/WIFI Language/zh_CN' -H 'Accept: application/json, text/plain, */\_' -H 'Sec-Fetch-Site: same-origin' -H 'Sec-Fetch-Mode: cors' -H 'Referer: https://www.securityeb.com/?code=051vQH0002IdYU1Y8Q200b0Pjm4vQH0R&state=ebupt' -H 'Sec-Fetch-Dest: empty' -H 'Accept-Language: zh-CN,zh-Hans;q=0.9'  
+   获取 openid 的值 {
+   "code": 200,
+   "msg": "查询成功",
+   "data": {
+   "openid": "oYXTH6I9ilba51LrU2ucVFXTQk9c",
+   "nickname": null,
+   "sex": null,
+   "city": null,
+   "country": null,
+   "headimgurl": null,
+   "privilege": null,
+   "unionid": null
+   }
+   }
 
 3. 然后发送验证码 curl -X POST 'https://www.securityeb.com/ktfsr/sms/send/sendCode' -H 'User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 19*0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.54(0x1800363a) NetType/WIFI Language/zh_CN' -H 'Accept: application/json, text/plain, */\_' -H 'Content-Type: application/json' -H 'Sec-Fetch-Site: same-origin' -H 'Accept-Language: zh-CN,zh-Hans;q=0.9' -H 'Sec-Fetch-Mode: cors' -H 'Origin: https://www.securityeb.com' -H 'Referer: https://www.securityeb.com/?code=051vQH0002IdYU1Y8Q200b0Pjm4vQH0R&state=ebupt' -H 'Sec-Fetch-Dest: empty' -d '{"userphone":"ByQ-9a5JC0NRsgzjwsZ1zQGS5_VGPXIJZ1Tp57RDpCw="}' --http1.1
    userphone 的加密就是 发送验证码的手机号 encrypt_phone 函数加密  
@@ -49,7 +51,7 @@
 
 返回 返回 {"code":200,"msg":"请求成功"} 就是登陆成功 就算绑定成功
 
-
 配置说明:
+
 - `config.json` 中的 `login.authorize_endpoint` 可修改为正确端口 (例如 8005)。
 - `login.auto_sms` 支持椰子云自动取号/拉取验证码，需要填写 token 或用户名/密码以及项目 ID。

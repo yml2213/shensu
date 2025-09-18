@@ -67,6 +67,8 @@ class LoginService:
             logger.error("初始化接码失败: %s", exc)
             self.auto_sms = None
             self.auto_sms_enabled = False
+            auto_cfg["enabled"] = False
+            save_app_config(self.config)
 
     def auto_mode_enabled(self) -> bool:
         return bool(self.auto_sms_enabled and self.auto_sms and self.auto_sms.is_enabled())
@@ -79,6 +81,18 @@ class LoginService:
 
     def disable_auto_mode(self) -> None:
         self.auto_sms_enabled = False
+        self.set_auto_enabled(False)
+
+    def set_auto_enabled(self, enabled: bool) -> None:
+        login_cfg = self.config.setdefault("login", {})
+        auto_cfg = login_cfg.setdefault("auto_sms", {})
+        auto_cfg["enabled"] = bool(enabled)
+        save_app_config(self.config)
+        if enabled:
+            self._reinitialize_auto(auto_cfg)
+        else:
+            self.auto_sms = None
+            self.auto_sms_enabled = False
 
     def get_auto_config(self) -> Dict[str, Any]:
         return self.config.get("login", {}).get("auto_sms", {}).copy()
@@ -224,6 +238,18 @@ class LoginService:
             return data
 
         self.session_store.update(mutator)
+
+    def fetch_balance(self) -> str:
+        auto_cfg = self.config.get("login", {}).get("auto_sms") or {}
+        if not auto_cfg or not auto_cfg.get("enabled"):
+            raise LoginError("请先配置并启用自动接码")
+        try:
+            if self.auto_sms and self.auto_sms.is_enabled():
+                return self.auto_sms.get_balance()
+            temp = AutoSmsManager(auto_cfg)
+            return temp.get_balance()
+        except SmsProviderError as exc:
+            raise LoginError(f"查询余额失败: {exc}") from exc
 
     def _update_session_after_bind(self, context: LoginContext) -> None:
         def mutator(data: Dict[str, Any]) -> Dict[str, Any]:
