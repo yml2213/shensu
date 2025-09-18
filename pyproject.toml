@@ -1,6 +1,6 @@
 [project]
 name = "shensu"
-version = "0.1.0"
+version = "0.2.0"
 description = "申诉提交脚本"
 authors = [{ name = "yml" }]
 requires-python = ">=3.10"
