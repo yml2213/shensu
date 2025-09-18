@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -41,7 +42,7 @@ class SubmissionConfig:
             company_name=data["company_name"],
             plea_reason=data["plea_reason"],
             file_path=file_path,
-            base=data.get("base", DEFAULT_BASE),
+            base=data.get("base", KTFSR_BASE),
             ua_add_plea=data.get("ua_add_plea"),
             ua_upload=data.get("ua_upload"),
         )
@@ -52,6 +53,7 @@ class SubmissionService:
 
     def __init__(self, config: SubmissionConfig) -> None:
         self.config = config
+        self.logger = logging.getLogger(__name__)
 
     def validate(self) -> None:
         cfg = self.config
@@ -111,6 +113,15 @@ class SubmissionService:
             should_close = True
 
         try:
+            # 先校验申诉手机号是否允许提交
+            enc_phone = body["plea_phone"]
+            chk = client.query_sysphone(enc_phone)
+            if not isinstance(chk, dict) or chk.get("code") != 200:
+                raise SubmissionError(f"号码校验失败: {chk}")
+            allowed = str(chk.get("data")).strip()
+            if allowed != "1":
+                raise SubmissionError("该号码非高频骚扰号码，无法申诉")
+            self.logger.info("申诉手机号校验通过: %s", cfg.complaint_phone)
             add_resp = client.add_plea(body)
             code = add_resp.get("code") if isinstance(add_resp, dict) else None
             if code not in (None, 200):
@@ -121,3 +132,21 @@ class SubmissionService:
         finally:
             if should_close:
                 client.close()
+
+
+def check_sysphone_allowed(phone: str, *, base: str = KTFSR_BASE, ua: Optional[str] = None) -> bool:
+    """检测申诉手机号是否允许提交。
+
+    返回 True 表示可提交（接口 data == "1"），False 表示不可提交（data == "0" 或其他）。
+    请求失败将返回 False。
+    """
+    phone = (phone or "").strip()
+    if not phone:
+        return False
+    enc = encrypt_phone(phone)
+    try:
+        with SubmissionApiClient(base_url=base, ua_add=ua) as client:
+            resp = client.query_sysphone(enc)
+            return str(resp.get("data", "")).strip() == "1"
+    except Exception:
+        return False

@@ -17,6 +17,7 @@ from ..services.submission_service import (
     SubmissionConfig,
     SubmissionError,
     SubmissionService,
+    check_sysphone_allowed,
 )
 from ..settings import ensure_directories, save_app_config
 from .logger import attach_ui_logger
@@ -205,9 +206,21 @@ class SubmissionDialog(tb.Toplevel):
             tb.Label(body, text=text).grid(row=r, column=0, sticky="w", padx=(0, 8), pady=4)
             widget.grid(row=r, column=1, sticky="ew", pady=4)
 
-        add_row(0, "OpenID", tb.Entry(body, textvariable=self._openid_var, state="readonly"))
-        add_row(1, "申诉手机号", tb.Entry(body, textvariable=self._complaint_phone_var))
-        add_row(2, "用户手机号", tb.Entry(body, textvariable=self._user_phone_var))
+        # OpenID 只读，浅灰显示
+        add_row(0, "OpenID", tb.Entry(body, textvariable=self._openid_var, state="readonly", bootstyle="secondary"))
+        # 用户手机号只读，浅灰显示（置于顶部）
+        add_row(1, "用户手机号", tb.Entry(body, textvariable=self._user_phone_var, state="readonly", bootstyle="secondary"))
+        # 申诉手机号 + 检测结果（放在用户手机号之后）
+        self._phone_check_var = tk.StringVar(value="待检测")
+        phone_row = tb.Frame(body)
+        phone_row.columnconfigure(0, weight=1)
+        phone_entry = tb.Entry(phone_row, textvariable=self._complaint_phone_var)
+        phone_entry.grid(row=0, column=0, sticky="ew")
+        self._phone_check_label = tb.Label(phone_row, textvariable=self._phone_check_var, bootstyle="secondary")
+        self._phone_check_label.grid(row=0, column=1, padx=(8, 0))
+        # 失去焦点时自动检测
+        phone_entry.bind("<FocusOut>", lambda _e: self._check_phone_async())
+        add_row(2, "申诉手机号", phone_row)
         add_row(3, "公司ID", tb.Entry(body, textvariable=self._company_id_var))
         add_row(4, "公司名称", tb.Entry(body, textvariable=self._company_name_var))
         add_row(5, "申诉理由", tb.Entry(body, textvariable=self._plea_reason_var))
@@ -226,6 +239,7 @@ class SubmissionDialog(tb.Toplevel):
         self.bind("<Return>", lambda _e: self._on_confirm())
         self.bind("<Escape>", lambda _e: self._on_cancel())
 
+        self._last_checked_phone: Optional[str] = None
         self.transient(master)
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
@@ -257,6 +271,37 @@ class SubmissionDialog(tb.Toplevel):
             self.geometry(f"+{x}+{y}")
         except Exception:  # noqa: BLE001
             pass
+
+    def _check_phone_async(self) -> None:
+        phone = self._complaint_phone_var.get().strip()
+        if not phone:
+            self._phone_check_var.set("待检测")
+            try:
+                self._phone_check_label.configure(bootstyle="secondary")
+            except Exception:
+                pass
+            return
+        if getattr(self, "_last_checked_phone", None) == phone:
+            return
+        self._phone_check_var.set("检测中...")
+        try:
+            self._phone_check_label.configure(bootstyle="info")
+        except Exception:
+            pass
+        import threading
+
+        def worker(p: str) -> None:
+            allowed = check_sysphone_allowed(p)
+            def update():
+                self._last_checked_phone = p
+                self._phone_check_var.set("可提交" if allowed else "不可提交")
+                try:
+                    self._phone_check_label.configure(bootstyle=("success" if allowed else "danger"))
+                except Exception:
+                    pass
+            self.after(0, update)
+
+        threading.Thread(target=worker, args=(phone,), daemon=True).start()
 
     def _on_confirm(self) -> None:
         vals = {

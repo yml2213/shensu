@@ -96,3 +96,24 @@ class SubmissionApiClient:
             return resp.json()
         except ValueError:
             return resp.text
+
+    def query_sysphone(self, encrypted_phone: str) -> Dict[str, Any]:
+        """查询申诉手机号是否允许提交。
+
+        后端接口: GET /sysblack/querySysphone?phone=ENC
+        返回示例: {"code":200, "msg":"请求成功", "data":"1"}
+        data 为 "1" 表示可提交，"0" 表示不可提交。
+        """
+        client = self._ensure_client()
+        url = f"{self.base}/sysblack/querySysphone"
+        headers = {
+            "User-Agent": self.ua_add,
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9,fr;q=0.8,de;q=0.7,en;q=0.6",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Referer": "https://www.securityeb.com/?state=ebupt",
+        }
+        resp = client.get(url, params={"phone": encrypted_phone}, headers=headers, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.json()
