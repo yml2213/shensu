@@ -12,3 +12,7 @@
   - 记录提交事件并展示“最近申诉手机号”列
   - 历史详情持久化到 `data/submissions.json`
 
+## v0.2.1
+
+- CI: 修复 Windows Runner 上 PyInstaller 步骤的 Shell 解析问题，改为 PowerShell 参数数组调用，并用 Compress-Archive 生成 zip。
+- Workflows: 构建步骤更稳健（不依赖 7z、不使用续行符）。
