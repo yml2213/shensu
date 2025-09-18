@@ -19,7 +19,14 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Prepare resources
+        shell: pwsh
+        run: |
+          if (-not (Test-Path media)) { New-Item -ItemType Directory -Path media | Out-Null }
+          if (-not (Test-Path config.json)) { Set-Content -Path config.json -Value '{}' -Encoding UTF8 }
+
       - name: Install dependencies
+        shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install .
@@ -45,8 +52,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if (Test-Path dist\WechatTool-win-x64.zip) { Remove-Item dist\WechatTool-win-x64.zip -Force }
-          Compress-Archive -Path dist\WechatTool\* -DestinationPath dist\WechatTool-win-x64.zip -Force
+          if (Test-Path 'dist/WechatTool-win-x64.zip') { Remove-Item 'dist/WechatTool-win-x64.zip' -Force }
+          Compress-Archive -Path 'dist/WechatTool/*' -DestinationPath 'dist/WechatTool-win-x64.zip' -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
