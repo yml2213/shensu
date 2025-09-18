@@ -97,6 +97,24 @@ class AccountService:
             raise AccountNotFoundError(f"账号 {wechat_id} 不存在")
         self._save(filtered)
 
+    def record_submission(self, wechat_id: str) -> Account:
+        """在提交完成后，按天累加账号的提交次数。"""
+        today = dt.datetime.now().strftime("%Y-%m-%d")
+        accounts = self.list_accounts()
+        for idx, acc in enumerate(accounts):
+            if acc.wechat_id == wechat_id:
+                count = acc.quota_count + 1 if acc.quota_date == today else 1
+                updated = replace(
+                    acc,
+                    quota_date=today,
+                    quota_count=count,
+                    updated_at=_now_str(),
+                )
+                accounts[idx] = updated
+                self._save(accounts)
+                return updated
+        raise AccountNotFoundError(f"账号 {wechat_id} 不存在")
+
     def _save(self, accounts: List[Account]) -> None:
         payload = {"accounts": [acc.to_dict() for acc in accounts]}
         self.store.save(payload)

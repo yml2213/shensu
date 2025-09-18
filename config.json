@@ -21,5 +21,13 @@
       "release_on_failure": true,
       "blacklist_on_failure": false
     }
+  },
+  "submission": {
+    "last_complaint_phone": "02361773549",
+    "last_user_phone": "13595610540",
+    "default_company_id": "91410100MA44X4F98J",
+    "default_company_name": "郑州创万瑞酒店管理有限公司",
+    "default_plea_reason": "公司最近刚拿下的号码段,需要去掉历史标记.与当前业务场景不符合.希望可以尽快处理.感谢.已经严重影响公司业务正常运行.",
+    "last_file_path": "/Users/yml/Downloads/61081758075526_.pic.jpg"
   }
 }

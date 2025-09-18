@@ -4,15 +4,21 @@ from __future__ import annotations
 import logging
 import threading
 import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Optional
+from pathlib import Path
 
 import ttkbootstrap as tb
 
 from ..logging_config import configure_logging
 from ..services.account_service import AccountExistsError, AccountNotFoundError, AccountService
 from ..services.login_service import LoginContext, LoginError, LoginService
-from ..settings import ensure_directories
+from ..services.submission_service import (
+    SubmissionConfig,
+    SubmissionError,
+    SubmissionService,
+)
+from ..settings import ensure_directories, save_app_config
 from .logger import attach_ui_logger
 from .tk_helpers import ensure_tk_env
 
@@ -162,6 +168,127 @@ class LoginDialog(tb.Toplevel):
         self.destroy()
 
 
+class SubmissionDialog(tb.Toplevel):
+    """提交申诉参数采集对话框。"""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        title: str,
+        default_openid: str,
+        default_user_phone: str,
+        *,
+        default_complaint_phone: str = "",
+        default_company_id: str = "",
+        default_company_name: str = "",
+        default_plea_reason: str = "",
+        default_file_path: str = "",
+    ) -> None:
+        super().__init__(master)
+        self.title(title)
+        self.resizable(False, False)
+        self.result: Optional[dict[str, str]] = None
+
+        self._openid_var = tk.StringVar(value=default_openid)
+        self._complaint_phone_var = tk.StringVar(value=default_complaint_phone)
+        self._user_phone_var = tk.StringVar(value=default_user_phone)
+        self._company_id_var = tk.StringVar(value=default_company_id)
+        self._company_name_var = tk.StringVar(value=default_company_name)
+        self._plea_reason_var = tk.StringVar(value=default_plea_reason)
+        self._file_path_var = tk.StringVar(value=default_file_path)
+
+        body = tb.Frame(self, padding=15)
+        body.grid(row=0, column=0, sticky="nsew")
+        body.columnconfigure(1, weight=1)
+
+        def add_row(r: int, text: str, widget: tk.Widget) -> None:
+            tb.Label(body, text=text).grid(row=r, column=0, sticky="w", padx=(0, 8), pady=4)
+            widget.grid(row=r, column=1, sticky="ew", pady=4)
+
+        add_row(0, "OpenID", tb.Entry(body, textvariable=self._openid_var, state="readonly"))
+        add_row(1, "申诉手机号", tb.Entry(body, textvariable=self._complaint_phone_var))
+        add_row(2, "用户手机号", tb.Entry(body, textvariable=self._user_phone_var))
+        add_row(3, "公司ID", tb.Entry(body, textvariable=self._company_id_var))
+        add_row(4, "公司名称", tb.Entry(body, textvariable=self._company_name_var))
+        add_row(5, "申诉理由", tb.Entry(body, textvariable=self._plea_reason_var))
+
+        file_row = tb.Frame(body)
+        file_row.columnconfigure(0, weight=1)
+        tb.Entry(file_row, textvariable=self._file_path_var).grid(row=0, column=0, sticky="ew")
+        tb.Button(file_row, text="选择文件", command=self._on_choose_file).grid(row=0, column=1, padx=(8, 0))
+        add_row(6, "证明文件", file_row)
+
+        btns = tb.Frame(self)
+        btns.grid(row=1, column=0, pady=(0, 10))
+        tb.Button(btns, text="取消", command=self._on_cancel).grid(row=0, column=0, padx=5)
+        tb.Button(btns, text="提交", bootstyle="primary", command=self._on_confirm).grid(row=0, column=1, padx=5)
+
+        self.bind("<Return>", lambda _e: self._on_confirm())
+        self.bind("<Escape>", lambda _e: self._on_cancel())
+
+        self.transient(master)
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        self.wait_visibility()
+        self._place_center_lower()
+        body.focus_set()
+        self.wait_window(self)
+
+    def _on_choose_file(self) -> None:
+        path = filedialog.askopenfilename(
+            title="选择证明文件",
+            filetypes=[("图片文件", "*.jpg *.jpeg *.png"), ("所有文件", "*.*")],
+        )
+        if path:
+            self._file_path_var.set(path)
+
+    def _place_center_lower(self) -> None:
+        """在父窗口中心偏下位置显示对话框。"""
+        try:
+            self.update_idletasks()
+            mw = self.master.winfo_width() if self.master else self.winfo_screenwidth()
+            mh = self.master.winfo_height() if self.master else self.winfo_screenheight()
+            mx = self.master.winfo_rootx() if self.master else 0
+            my = self.master.winfo_rooty() if self.master else 0
+            w = self.winfo_reqwidth()
+            h = self.winfo_reqheight()
+            x = mx + max(0, (mw - w) // 2)
+            y = my + max(0, int((mh - h) * 0.6))  # 居中偏下
+            self.geometry(f"+{x}+{y}")
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _on_confirm(self) -> None:
+        vals = {
+            "openid": self._openid_var.get().strip(),
+            "complaint_phone": self._complaint_phone_var.get().strip(),
+            "user_phone": self._user_phone_var.get().strip(),
+            "company_id": self._company_id_var.get().strip(),
+            "company_name": self._company_name_var.get().strip(),
+            "plea_reason": self._plea_reason_var.get().strip(),
+            "file_path": self._file_path_var.get().strip(),
+        }
+        missing = [k for k, v in vals.items() if not v]
+        if missing:
+            messagebox.showwarning("提示", f"请填写完整: {', '.join(missing)}", parent=self)
+            return
+        try:
+            if not Path(vals["file_path"]).exists():
+                messagebox.showwarning("提示", "选择的文件不存在", parent=self)
+                return
+        except Exception:
+            messagebox.showwarning("提示", "文件路径无效", parent=self)
+            return
+        self.result = vals
+        self.destroy()
+
+    def _on_cancel(self) -> None:
+        self.result = None
+        self.destroy()
+
+    
+
+
 class WechatToolApp(tb.Window):
     """主应用窗口。"""
 
@@ -185,6 +312,9 @@ class WechatToolApp(tb.Window):
         self.tree: Optional[ttk.Treeview] = None
         self.log_text: Optional[tk.Text] = None
         self.login_button: Optional[tb.Button] = None
+        self.config_frame: Optional[tk.Misc] = None
+        self.save_cfg_btn: Optional[tb.Button] = None
+        self.show_auto_config_var = tk.BooleanVar(value=False)
         # 日志级别控制变量，默认取当前根 logger 的级别
         current_level_name = logging.getLevelName(logging.getLogger().getEffectiveLevel())
         if not isinstance(current_level_name, str):
@@ -208,8 +338,9 @@ class WechatToolApp(tb.Window):
         attach_ui_logger(self._append_log)
         self.refresh_accounts()
         self._refresh_balance()
-        # 启动后自动聚焦
-        self.after(50, self._set_initial_focus)
+        # 启动后自动置顶并聚焦
+        self.after(80, self._bring_to_front)
+        self.after(120, self._set_initial_focus)
 
     def _build_widgets(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -235,7 +366,17 @@ class WechatToolApp(tb.Window):
         tb.Button(sidebar, text="刷新列表", bootstyle="secondary", command=self.refresh_accounts).grid(row=5, column=0, **button_opts)
 
         tb.Separator(sidebar, orient="horizontal").grid(row=6, column=0, sticky="ew", pady=(12, 6))
-        tb.Label(sidebar, text="椰子云配置", font=("Helvetica", 12, "bold"), anchor="w").grid(row=7, column=0, sticky="w")
+        cfg_header = tb.Frame(sidebar)
+        cfg_header.grid(row=7, column=0, sticky="ew")
+        cfg_header.columnconfigure(0, weight=1)
+        tb.Label(cfg_header, text="椰子云配置", font=("Helvetica", 12, "bold"), anchor="w").grid(row=0, column=0, sticky="w")
+        tb.Checkbutton(
+            cfg_header,
+            text="显示配置",
+            variable=self.show_auto_config_var,
+            bootstyle="round-toggle",
+            command=self._on_toggle_config_panel,
+        ).grid(row=0, column=1, sticky="e")
         tb.Checkbutton(sidebar, text="启用自动取卡", variable=self.use_auto_var, bootstyle="round-toggle", command=self._on_toggle_auto).grid(row=8, column=0, sticky="w", pady=(4, 4))
         tb.Label(sidebar, textvariable=self.balance_var, bootstyle="info", anchor="w").grid(row=9, column=0, sticky="w", pady=(0, 8))
 
@@ -264,8 +405,11 @@ class WechatToolApp(tb.Window):
                 tb.Entry(config_frame, textvariable=var, width=22, show=show_char).grid(
                     row=idx * 2 + 1, column=0, sticky="ew", pady=(0, 6)
                 )
-
-        tb.Button(sidebar, text="保存配置", bootstyle="secondary", command=self._on_save_yzy_config).grid(row=11, column=0, **button_opts)
+        self.config_frame = config_frame
+        self.save_cfg_btn = tb.Button(sidebar, text="保存配置", bootstyle="secondary", command=self._on_save_yzy_config)
+        self.save_cfg_btn.grid(row=11, column=0, **button_opts)
+        # 默认隐藏配置详情
+        self._apply_config_panel_visibility()
         sidebar.rowconfigure(12, weight=1)
 
         # 主内容区域
@@ -275,7 +419,11 @@ class WechatToolApp(tb.Window):
         content.rowconfigure(1, weight=3)
         content.rowconfigure(2, weight=2)
 
-        tb.Label(content, text="账号列表", font=("Helvetica", 14, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        header = tb.Frame(content)
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        header.columnconfigure(0, weight=1)
+        tb.Label(header, text="账号列表", font=("Helvetica", 14, "bold")).grid(row=0, column=0, sticky="w")
+        tb.Button(header, text="提交申诉", bootstyle="warning", command=self._on_submit_appeal).grid(row=0, column=1, sticky="e")
 
         style = ttk.Style(self)
         style.configure("Account.Treeview", rowheight=28, padding=0)
@@ -617,6 +765,113 @@ class WechatToolApp(tb.Window):
         self.log_text.insert("end", message + "\n")
         self.log_text.configure(state="disabled")
         self.log_text.see("end")
+
+    
+
+    def _bring_to_front(self) -> None:
+        try:
+            self.update_idletasks()
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+            # 置顶一小段时间确保到前台，再恢复
+            self.attributes("-topmost", True)
+            self.after(300, lambda: self.attributes("-topmost", False))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _on_toggle_config_panel(self) -> None:
+        self._apply_config_panel_visibility()
+
+    def _apply_config_panel_visibility(self) -> None:
+        visible = bool(self.show_auto_config_var.get())
+        if self.config_frame is None or self.save_cfg_btn is None:
+            return
+        if visible:
+            self.config_frame.grid()
+            self.save_cfg_btn.grid()
+        else:
+            self.config_frame.grid_remove()
+            self.save_cfg_btn.grid_remove()
+
+    def _get_openid_for(self, wechat_id: str) -> Optional[str]:
+        try:
+            data = self.login_service.session_store.load()  # type: ignore[attr-defined]
+            sessions = data.get("sessions", [])
+            for item in sessions:
+                if item.get("wechat_id") == wechat_id:
+                    return item.get("openid") or None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("读取 openid 失败: %s", exc)
+        return None
+
+    def _on_submit_appeal(self) -> None:
+        wechat_id = self._get_selected_wechat()
+        if not wechat_id:
+            return
+        accounts = {acc.wechat_id: acc for acc in self.account_service.list_accounts()}
+        account = accounts.get(wechat_id)
+        if account is None:
+            messagebox.showerror("错误", "选中的账号不存在，请刷新")
+            return
+        openid = self._get_openid_for(wechat_id) or ""
+        if not openid:
+            messagebox.showinfo("提示", "未找到 openid，请先完成登录/绑定流程")
+            return
+        # 载入上次的提交默认值
+        sub_cfg = self.login_service.config.setdefault("submission", {})
+        dialog = SubmissionDialog(
+            self,
+            title="提交申诉",
+            default_openid=openid,
+            default_user_phone=account.phone or sub_cfg.get("last_user_phone", ""),
+            default_complaint_phone=sub_cfg.get("last_complaint_phone", ""),
+            default_company_id=sub_cfg.get("default_company_id", ""),
+            default_company_name=sub_cfg.get("default_company_name", ""),
+            default_plea_reason=sub_cfg.get("default_plea_reason", ""),
+            default_file_path=sub_cfg.get("last_file_path", ""),
+        )
+        if not dialog.result:
+            return
+        cfg = SubmissionConfig(
+            openid=dialog.result["openid"],
+            complaint_phone=dialog.result["complaint_phone"],
+            user_phone=dialog.result["user_phone"],
+            company_id=dialog.result["company_id"],
+            company_name=dialog.result["company_name"],
+            plea_reason=dialog.result["plea_reason"],
+            file_path=Path(dialog.result["file_path"]),
+        )
+        try:
+            service = SubmissionService(cfg)
+            resp = service.submit()
+        except SubmissionError as exc:
+            logger.exception("提交申诉失败")
+            messagebox.showerror("错误", f"提交失败: {exc}")
+            self._append_log(f"提交失败: {exc}")
+            return
+        # 保存提交默认值，便于下次预填
+        sub_cfg.update(
+            {
+                "last_complaint_phone": cfg.complaint_phone,
+                "last_user_phone": cfg.user_phone,
+                "default_company_id": cfg.company_id,
+                "default_company_name": cfg.company_name,
+                "default_plea_reason": cfg.plea_reason,
+                "last_file_path": str(cfg.file_path),
+            }
+        )
+        save_app_config(self.login_service.config)
+        # 记录提交次数并刷新列表
+        try:
+            self.account_service.record_submission(wechat_id)
+            self.refresh_accounts()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("更新提交计数失败: %s", exc)
+        self._append_log(
+            f"提交成功: 文件 {resp.get('filename')}\nadd: {resp.get('add')}\nupload: {resp.get('upload')}"
+        )
+        messagebox.showinfo("成功", "申诉已提交")
 
     def _on_change_log_level(self) -> None:
         level_name = (self.log_level_var.get() or "INFO").upper()
