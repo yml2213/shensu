@@ -39,6 +39,11 @@ class AccountDialog(tb.Toplevel):
         super().__init__(master)
         self.title(title)
         self.resizable(False, False)
+        # 先隐藏，计算好尺寸后再显示，避免出现左上角再跳到中间的闪动
+        try:
+            self.withdraw()
+        except Exception:  # noqa: BLE001
+            pass
         self.result: Optional[dict[str, str]] = None
 
         self._wechat_var = tk.StringVar(value=(initial or {}).get("wechat_id", ""))
@@ -69,14 +74,41 @@ class AccountDialog(tb.Toplevel):
         self.bind("<Escape>", lambda _e: self._on_cancel())
 
         self.transient(master)
+        # 计算尺寸并居中后再显示
+        self._place_center()
+        try:
+            self.deiconify()
+        except Exception:  # noqa: BLE001
+            pass
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.wait_visibility()
         if not disable_wechat:
             wechat_entry.focus_set()
         else:
             body.focus_set()
         self.wait_window(self)
+
+    def _place_center(self) -> None:
+        """将对话框置于父窗口中央。"""
+        try:
+            self.update_idletasks()
+            if self.master is not None:
+                mw = self.master.winfo_width()
+                mh = self.master.winfo_height()
+                mx = self.master.winfo_rootx()
+                my = self.master.winfo_rooty()
+            else:
+                mw = self.winfo_screenwidth()
+                mh = self.winfo_screenheight()
+                mx = 0
+                my = 0
+            w = self.winfo_reqwidth()
+            h = self.winfo_reqheight()
+            x = mx + max(0, (mw - w) // 2)
+            y = my + max(0, (mh - h) // 2)
+            self.geometry(f"+{x}+{y}")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _on_save(self) -> None:
         wechat_id = self._wechat_var.get().strip()
@@ -109,6 +141,11 @@ class LoginDialog(tb.Toplevel):
         super().__init__(master)
         self.title(title)
         self.resizable(False, False)
+        # 先隐藏，计算好尺寸后再显示，避免出现左上角再跳到中间的闪动
+        try:
+            self.withdraw()
+        except Exception:  # noqa: BLE001
+            pass
         self.result: Optional[dict[str, str]] = None
         self._auto_enabled = auto_enabled
 
@@ -142,11 +179,38 @@ class LoginDialog(tb.Toplevel):
         self.bind("<Escape>", lambda _e: self._on_cancel())
 
         self.transient(master)
+        # 计算尺寸并居中后再显示
+        self._place_center()
+        try:
+            self.deiconify()
+        except Exception:  # noqa: BLE001
+            pass
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.wait_visibility()
         body.focus_set()
         self.wait_window(self)
+
+    def _place_center(self) -> None:
+        """将对话框置于父窗口中央。"""
+        try:
+            self.update_idletasks()
+            if self.master is not None:
+                mw = self.master.winfo_width()
+                mh = self.master.winfo_height()
+                mx = self.master.winfo_rootx()
+                my = self.master.winfo_rooty()
+            else:
+                mw = self.winfo_screenwidth()
+                mh = self.winfo_screenheight()
+                mx = 0
+                my = 0
+            w = self.winfo_reqwidth()
+            h = self.winfo_reqheight()
+            x = mx + max(0, (mw - w) // 2)
+            y = my + max(0, (mh - h) // 2)
+            self.geometry(f"+{x}+{y}")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _on_confirm(self) -> None:
         wxid = self._wxid_var.get().strip()
@@ -240,11 +304,20 @@ class SubmissionDialog(tb.Toplevel):
         self.bind("<Escape>", lambda _e: self._on_cancel())
 
         self._last_checked_phone: Optional[str] = None
+        # 先隐藏，计算好尺寸后再显示，避免闪动
+        try:
+            self.withdraw()
+        except Exception:  # noqa: BLE001
+            pass
         self.transient(master)
+        # 计算尺寸并居中后再显示
+        self._place_center()
+        try:
+            self.deiconify()
+        except Exception:  # noqa: BLE001
+            pass
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-        self.wait_visibility()
-        self._place_center_lower()
         body.focus_set()
         self.wait_window(self)
 
@@ -256,18 +329,24 @@ class SubmissionDialog(tb.Toplevel):
         if path:
             self._file_path_var.set(path)
 
-    def _place_center_lower(self) -> None:
-        """在父窗口中心偏下位置显示对话框。"""
+    def _place_center(self) -> None:
+        """将对话框置于父窗口中央。"""
         try:
             self.update_idletasks()
-            mw = self.master.winfo_width() if self.master else self.winfo_screenwidth()
-            mh = self.master.winfo_height() if self.master else self.winfo_screenheight()
-            mx = self.master.winfo_rootx() if self.master else 0
-            my = self.master.winfo_rooty() if self.master else 0
+            if self.master is not None:
+                mw = self.master.winfo_width()
+                mh = self.master.winfo_height()
+                mx = self.master.winfo_rootx()
+                my = self.master.winfo_rooty()
+            else:
+                mw = self.winfo_screenwidth()
+                mh = self.winfo_screenheight()
+                mx = 0
+                my = 0
             w = self.winfo_reqwidth()
             h = self.winfo_reqheight()
             x = mx + max(0, (mw - w) // 2)
-            y = my + max(0, int((mh - h) * 0.6))  # 居中偏下
+            y = my + max(0, (mh - h) // 2)
             self.geometry(f"+{x}+{y}")
         except Exception:  # noqa: BLE001
             pass
@@ -348,7 +427,7 @@ class WechatToolApp(tb.Window):
 
     def __init__(self) -> None:
         super().__init__(title="微信申诉工具", themename="cosmo")
-        self.geometry("1080x680")
+        # 默认不设置固定尺寸，后续根据表格与侧栏计算合适窗口大小
         self.resizable(True, True)
 
         self.account_service = AccountService()
@@ -358,6 +437,7 @@ class WechatToolApp(tb.Window):
         self.log_text: Optional[tk.Text] = None
         self.login_button: Optional[tb.Button] = None
         self.config_frame: Optional[tk.Misc] = None
+        self.sidebar: Optional[tk.Misc] = None
         self.save_cfg_btn: Optional[tb.Button] = None
         self.show_auto_config_var = tk.BooleanVar(value=False)
         # 日志级别控制变量，默认取当前根 logger 的级别
@@ -400,6 +480,7 @@ class WechatToolApp(tb.Window):
         sidebar = tb.Frame(main_frame, padding=14)
         sidebar.grid(row=0, column=0, sticky="nsw")
         sidebar.columnconfigure(0, weight=1)
+        self.sidebar = sidebar
 
         tb.Label(sidebar, text="账号管理", font=("Helvetica", 14, "bold"), anchor="center").grid(row=0, column=0, sticky="ew", pady=(0, 10))
         button_opts = {"sticky": "ew", "pady": 6}
@@ -526,6 +607,52 @@ class WechatToolApp(tb.Window):
         status_bar = tb.Label(self, textvariable=self.status_var, anchor="w", bootstyle="secondary")
         status_bar.grid(row=1, column=0, sticky="ew")
 
+        # 根据表格与侧栏尺寸，调整默认窗口大小以“正好容纳表格”为目标
+        self.after(50, self._fit_window_to_table)
+
+    def _fit_window_to_table(self) -> None:
+        try:
+            self.update_idletasks()
+            sidebar_w = self.sidebar.winfo_reqwidth() if self.sidebar else 0
+            tree_w = 0
+            if self.tree is not None:
+                try:
+                    for cid in self.tree["columns"]:
+                        # 获取每列固定宽度（在 _build_widgets 中已显式设置）
+                        w = int(self.tree.column(cid, "width"))
+                        tree_w += w
+                except Exception:
+                    pass
+                # 预留竖向滚动条及内边距
+                tree_w += 24
+            # 额外边距与容器间隙
+            padding = 60
+            desired_w = max(700, sidebar_w + tree_w + padding)
+            desired_h = max(520, self.winfo_reqheight())
+            # 仅在当前窗口宽度与目标差异较大时调整，避免影响用户已调整的尺寸
+            cur_w = self.winfo_width()
+            if not cur_w or abs(cur_w - desired_w) > 40:
+                self.geometry(f"{desired_w}x{desired_h}")
+        except Exception:  # noqa: BLE001
+            pass
+    
+    # 选择记忆 ---------------------------------------------------------
+    def _get_last_selected_wechat(self) -> Optional[str]:
+        try:
+            ui_state = self.login_service.config.setdefault("ui", {})
+            val = ui_state.get("last_selected_wechat")
+            return val if isinstance(val, str) and val.strip() else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _remember_last_selected(self, wechat_id: str) -> None:
+        try:
+            ui_state = self.login_service.config.setdefault("ui", {})
+            ui_state["last_selected_wechat"] = wechat_id
+            save_app_config(self.login_service.config)
+        except Exception:  # noqa: BLE001
+            pass
+
     # 账号操作 ---------------------------------------------------------
     def refresh_accounts(self) -> None:
         if self.tree is None:
@@ -540,10 +667,17 @@ class WechatToolApp(tb.Window):
         self.tree.delete(*self.tree.get_children())
         today = dt_today_string()
         from datetime import datetime
+        last_selected = self._get_last_selected_wechat()
+        first_item: Optional[str] = None
+        selected_item: Optional[str] = None
         for acc in accounts:
             quota = acc.quota_count if acc.quota_date == today else 0
             quota_text = f"{quota}/3"
-            status = "已绑定手机号" if acc.phone else "未绑定手机号"
+            # 状态：优先显示微信绑定，其次显示“已添加手机号”，否则“未绑定手机号”
+            status = (
+                "微信已绑定手机号" if getattr(acc, "phone_bound", False)
+                else ("已添加手机号" if acc.phone else "未绑定手机号")
+            )
             # 最近提交信息（仅展示申诉手机号）
             last_text = "-"
             if acc.events:
@@ -553,7 +687,7 @@ class WechatToolApp(tb.Window):
                         cphone = ev.get("complaint_phone") or "-"
                         last_text = cphone
                         break
-            self.tree.insert(
+            item_id = self.tree.insert(
                 "",
                 tk.END,
                 values=(
@@ -565,6 +699,25 @@ class WechatToolApp(tb.Window):
                     last_text,
                 ),
             )
+            if first_item is None:
+                first_item = item_id
+            if last_selected and acc.wechat_id == last_selected:
+                selected_item = item_id
+
+        # 应用默认选择：优先选择上次选中的账号，否则选择首个
+        target_item = selected_item or first_item
+        if target_item:
+            try:
+                self.tree.selection_set(target_item)
+                self.tree.focus(target_item)
+                self.tree.see(target_item)
+                values = self.tree.item(target_item, "values")
+                if values and isinstance(values, (list, tuple)) and values[0]:
+                    current = str(values[0])
+                    if current and current != (last_selected or ""):
+                        self._remember_last_selected(current)
+            except Exception:  # noqa: BLE001
+                pass
         self._set_status(f"当前共 {len(accounts)} 个账号")
 
     def _on_add_account(self) -> None:
@@ -584,6 +737,8 @@ class WechatToolApp(tb.Window):
             logger.exception("创建账号失败")
             messagebox.showerror("错误", f"创建账号失败: {exc}")
             return
+        # 记住并选中新账号
+        self._remember_last_selected(account.wechat_id)
         self.refresh_accounts()
         messagebox.showinfo("成功", f"已添加账号 {account.wechat_id}")
 
@@ -622,6 +777,8 @@ class WechatToolApp(tb.Window):
             messagebox.showerror("错误", f"更新账号失败: {exc}")
             return
         self.refresh_accounts()
+        # 保持选择在当前编辑的账号
+        self._remember_last_selected(updated.wechat_id)
         messagebox.showinfo("成功", f"已更新账号 {updated.wechat_id}")
 
     def _on_delete_account(self) -> None:
@@ -706,6 +863,8 @@ class WechatToolApp(tb.Window):
             return
 
         self._set_login_button_enabled(True)
+        # 记住最近操作的账号
+        self._remember_last_selected(wechat_id)
         self.refresh_accounts()
         self._refresh_balance()
         self._set_status("准备就绪")
@@ -732,6 +891,7 @@ class WechatToolApp(tb.Window):
 
     def _handle_auto_success(self, wechat_id: str) -> None:
         self._set_login_button_enabled(True)
+        self._remember_last_selected(wechat_id)
         self.refresh_accounts()
         self._refresh_balance()
         self._set_status("准备就绪")
@@ -940,6 +1100,9 @@ class WechatToolApp(tb.Window):
             self.refresh_accounts()
         except Exception as exc:  # noqa: BLE001
             logger.warning("更新提交计数失败: %s", exc)
+        else:
+            # 记住最近操作账号（提交成功）
+            self._remember_last_selected(wechat_id)
         self._append_log(
             f"提交成功: 文件 {resp.get('filename')}\nadd: {resp.get('add')}\nupload: {resp.get('upload')}"
         )

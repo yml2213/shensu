@@ -200,6 +200,7 @@ class LoginService:
         self.account_service.update_account(
             context.wechat_id,
             phone=context.phone,
+            phone_bound=True,
             reset_quota=True,
         )
         self._update_session_after_bind(context)

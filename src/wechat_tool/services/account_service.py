@@ -55,6 +55,7 @@ class AccountService:
             wechat_id=wechat_id,
             display_name=display_name.strip(),
             phone=phone.strip(),
+            phone_bound=False,  # 新增时即便填写手机号也视为“已添加”，未完成绑定
             quota_date="",
             quota_count=0,
             created_at=now,
@@ -69,6 +70,7 @@ class AccountService:
         wechat_id: str,
         display_name: Optional[str] = None,
         phone: Optional[str] = None,
+        phone_bound: Optional[bool] = None,
         *,
         reset_quota: bool = False,
     ) -> Account:
@@ -79,10 +81,22 @@ class AccountService:
             if acc.wechat_id == wechat_id:
                 quota_date = "" if reset_quota else acc.quota_date
                 quota_count = 0 if reset_quota else acc.quota_count
+                # 处理绑定状态：
+                # - 如果显式传入 phone_bound 则按其更新；
+                # - 如果传入了 phone 且与原值不同，则默认视为人工修改，重置为未绑定（除非同时传入 phone_bound）。
+                new_phone_bound = acc.phone_bound
+                if phone_val is not None:
+                    if phone_val != acc.phone:
+                        new_phone_bound = phone_bound if phone_bound is not None else False
+                    else:
+                        new_phone_bound = phone_bound if phone_bound is not None else acc.phone_bound
+                elif phone_bound is not None:
+                    new_phone_bound = phone_bound
                 updated = replace(
                     acc,
                     display_name=display_val if display_val is not None else acc.display_name,
                     phone=phone_val if phone_val is not None else acc.phone,
+                    phone_bound=new_phone_bound,
                     quota_date=quota_date,
                     quota_count=quota_count,
                     updated_at=_now_str(),

@@ -17,6 +17,8 @@ class Account:
     wechat_id: str
     display_name: str = ""
     phone: str = ""
+    # 是否通过微信流程完成了绑定
+    phone_bound: bool = False
     quota_date: str = ""
     quota_count: int = 0
     person_id: Optional[str] = None
@@ -30,6 +32,7 @@ class Account:
             wechat_id=data["wechat_id"],
             display_name=data.get("display_name", ""),
             phone=data.get("phone", ""),
+            phone_bound=bool(data.get("phone_bound", False)),
             quota_date=data.get("quota_date", ""),
             quota_count=int(data.get("quota_count", 0)),
             person_id=data.get("person_id"),

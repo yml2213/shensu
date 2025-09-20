@@ -66,6 +66,17 @@
       ],
       "created_at": "2025-09-17T23:21:51",
       "updated_at": "2025-09-18T16:16:44"
+    },
+    {
+      "wechat_id": "test123",
+      "display_name": "123",
+      "phone": "13455556666",
+      "quota_date": "",
+      "quota_count": 0,
+      "person_id": null,
+      "events": [],
+      "created_at": "2025-09-20T14:45:25",
+      "updated_at": "2025-09-20T14:45:43"
     }
   ]
 }
