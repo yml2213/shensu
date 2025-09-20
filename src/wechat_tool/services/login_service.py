@@ -249,6 +249,8 @@ class LoginService:
             return temp.get_balance()
         except SmsProviderError as exc:
             raise LoginError(f"查询余额失败: {exc}") from exc
+        except Exception as exc:  # 兜底保护，防止意外异常导致 UI 崩溃
+            raise LoginError(f"查询余额失败: {exc}") from exc
 
     def _update_session_after_bind(self, context: LoginContext) -> None:
         def mutator(data: Dict[str, Any]) -> Dict[str, Any]:

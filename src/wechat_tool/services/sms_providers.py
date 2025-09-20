@@ -174,6 +174,12 @@ class YzySmsProvider(BaseSmsProvider):
         return token
 
     def _request(self, path: str, params: Dict[str, Any]) -> httpx.Response:
+        """发起 GET 请求，内置主/备域名切换与异常封装。
+
+        - 任何 httpx 异常（网络错误/超时/4xx/5xx）统一封装为 SmsProviderError，
+          以避免异常冒泡导致上层 UI 崩溃。
+        - 主域名失败后自动尝试备用域名（如已配置）。
+        """
         url = f"{self.base_url}{path}"
         # Debug 输出请求（脱敏参数）
         masked = dict(params)
@@ -185,15 +191,26 @@ class YzySmsProvider(BaseSmsProvider):
         if "password" in masked and masked["password"]:
             masked["password"] = "***"
         logger.debug("HTTP GET %s params=%s", url, masked)
-        resp = self._client.get(url, params=params)
-        logger.debug("HTTP %s -> %s", url, resp.status_code)
-        if resp.status_code >= 500 and self.backup_url:
-            backup_url = f"{self.backup_url}{path}"
-            logger.warning("主域名请求失败，尝试备用域名 %s", backup_url)
-            resp = self._client.get(backup_url, params=params)
-            logger.debug("HTTP %s -> %s", backup_url, resp.status_code)
-        resp.raise_for_status()
-        return resp
+
+        try:
+            resp = self._client.get(url, params=params)
+            logger.debug("HTTP %s -> %s", url, resp.status_code)
+            resp.raise_for_status()
+            return resp
+        except httpx.HTTPError as first_exc:  # 包含请求错误与状态码错误
+            # 主域名失败后尝试备用域名
+            if self.backup_url:
+                backup_url = f"{self.backup_url}{path}"
+                logger.warning("主域名请求失败，尝试备用域名 %s", backup_url)
+                try:
+                    resp2 = self._client.get(backup_url, params=params)
+                    logger.debug("HTTP %s -> %s", backup_url, resp2.status_code)
+                    resp2.raise_for_status()
+                    return resp2
+                except httpx.HTTPError as backup_exc:
+                    logger.debug("备用域名也失败: %s", backup_exc)
+                    raise SmsProviderError(f"椰子云请求失败: {backup_exc}") from backup_exc
+            raise SmsProviderError(f"椰子云请求失败: {first_exc}") from first_exc
 
     @staticmethod
     def _parse_remaining(value: Any) -> Optional[int]:
